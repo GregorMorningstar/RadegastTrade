@@ -9,6 +9,9 @@ enum UserRole: string
     case Manager  = 'manager';
     case Employee = 'employee';
 
+    // Właściciel organizacji (nadrzędnej jednostki: zaprasza siedziby hurtowni i sklepów)
+    case ORGANIZATION_OWNER = 'organization_owner';
+
     // Hurtownia / magazyn
     case WAREHOUSE_OWNER   = 'warehouse_owner';
     case WAREHOUSE_LEADER  = 'warehouse_leader';
@@ -36,6 +39,11 @@ enum UserRole: string
      */
     public function slug(): string
     {
+        // wartość roli w bazie to organization_owner, ale w adresach i trasach używamy samego "organization"
+        if ($this === self::ORGANIZATION_OWNER) {
+            return 'organization';
+        }
+
         return $this->isWarehouse() || $this->isShop()
             ? substr($this->value, strpos($this->value, '_') + 1)
             : $this->value;
@@ -58,6 +66,7 @@ enum UserRole: string
             self::Admin => 'Administrator',
             self::Manager => 'Manager',
             self::Employee => 'Pracownik',
+            self::ORGANIZATION_OWNER => 'Właściciel organizacji',
             self::WAREHOUSE_OWNER => 'Hurtownia - kierownik',
             self::WAREHOUSE_LEADER => 'Hurtownia - leader',
             self::WAREHOUSE_WORKER => 'Hurtownia - pracownik',
@@ -132,6 +141,8 @@ enum UserRole: string
             self::Admin               => 'Administrator',
             self::Manager             => 'Manager',
             self::Employee            => 'Pracownik',
+
+            self::ORGANIZATION_OWNER  => 'Właściciel organizacji',
 
             self::WAREHOUSE_OWNER     => 'Główny kierownik (hurtownia)',
             self::WAREHOUSE_LEADER    => 'Leader (hurtownia)',

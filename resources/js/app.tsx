@@ -12,7 +12,9 @@ import WarehouseWorkerLayout from '@/layouts/warehouse/worker/layout';
 import ShopOwnerLayout from '@/layouts/shop/owner/layout';
 import ShopLeaderLayout from '@/layouts/shop/leader/layout';
 import ShopWorkerLayout from '@/layouts/shop/worker/layout';
+import OrganizationOwnerLayout from '@/layouts/platform/organization/layout';
 import AuthLayout from '@/layouts/auth-layout';
+import LegalLayout from '@/layouts/legal-layout';
 import RoleLayout from '@/layouts/role-layout';
 import SettingsLayout from '@/layouts/settings/layout';
 
@@ -26,6 +28,7 @@ const roleLayouts: Record<string, React.ComponentType<{ children: React.ReactNod
     'shop/owner': ShopOwnerLayout,
     'shop/leader': ShopLeaderLayout,
     'shop/worker': ShopWorkerLayout,
+    'platform/organization': OrganizationOwnerLayout,
 };
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
@@ -38,6 +41,8 @@ void createInertiaApp({
                 return null;
             case name.startsWith('errors/'):
                 return null;
+            case name.startsWith('legal/'):
+                return LegalLayout;
             case name.startsWith('auth/'):
                 return AuthLayout;
             case name.startsWith('settings/'):

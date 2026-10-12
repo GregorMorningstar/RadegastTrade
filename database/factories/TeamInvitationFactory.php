@@ -31,6 +31,18 @@ class TeamInvitationFactory extends Factory
     }
 
     /**
+     * Indicate that the invitation has been withdrawn.
+     */
+    public function revoked(?User $by = null): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_active' => false,
+            'revoked_at' => now(),
+            'revoked_by' => $by?->id ?? User::factory(),
+        ]);
+    }
+
+    /**
      * Indicate that the invitation has been accepted.
      */
     public function accepted(): static

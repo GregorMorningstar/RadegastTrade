@@ -34,6 +34,12 @@ class ValidTeamInvitation implements ValidationRule
             return;
         }
 
+        if (! $value->is_active) {
+            $fail(__('This invitation is no longer active.'));
+
+            return;
+        }
+
         if ($value->isExpired()) {
             $fail(__('This invitation has expired.'));
 

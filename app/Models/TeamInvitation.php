@@ -20,12 +20,16 @@ use Illuminate\Support\Str;
  * @property int $invited_by
  * @property Carbon|null $expires_at
  * @property Carbon|null $accepted_at
+ * @property bool $is_active
+ * @property Carbon|null $revoked_at
+ * @property int|null $revoked_by
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Team $team
  * @property-read User $inviter
+ * @property-read User|null $revoker
  */
-#[Fillable(['team_id', 'email', 'role', 'invited_by', 'expires_at', 'accepted_at'])]
+#[Fillable(['team_id', 'email', 'role', 'invited_by', 'expires_at', 'accepted_at', 'is_active', 'revoked_at', 'revoked_by'])]
 class TeamInvitation extends Model
 {
     /** @use HasFactory<TeamInvitationFactory> */
@@ -66,6 +70,36 @@ class TeamInvitation extends Model
     }
 
     /**
+     * Get the user who withdrew the invitation (the team member who cancelled it or the invitee who declined it).
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function revoker(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'revoked_by');
+    }
+
+    /**
+     * Withdraw the invitation, remembering when and by whom it was done.
+     */
+    public function revoke(User $by): void
+    {
+        $this->forceFill([
+            'is_active' => false,
+            'revoked_at' => now(),
+            'revoked_by' => $by->id,
+        ])->save();
+    }
+
+    /**
+     * Determine if the invitation has been withdrawn.
+     */
+    public function isRevoked(): bool
+    {
+        return $this->revoked_at !== null;
+    }
+
+    /**
      * Determine if the invitation has been accepted.
      */
     public function isAccepted(): bool
@@ -78,7 +112,7 @@ class TeamInvitation extends Model
      */
     public function isPending(): bool
     {
-        return $this->accepted_at === null && ! $this->isExpired();
+        return $this->is_active && $this->accepted_at === null && ! $this->isExpired();
     }
 
     /**
@@ -100,6 +134,8 @@ class TeamInvitation extends Model
             'role' => TeamRole::class,
             'expires_at' => 'datetime',
             'accepted_at' => 'datetime',
+            'is_active' => 'boolean',
+            'revoked_at' => 'datetime',
         ];
     }
 

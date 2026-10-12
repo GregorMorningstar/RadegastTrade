@@ -14,12 +14,25 @@ return new class extends Migration
     {
         Schema::create('users', function (Blueprint $table) {
             $table->id();
-    $table->enum('role', UserRole::getValues()); 
+    $table->enum('role', UserRole::getValues());
+
+            // Organization the user belongs to (the organizations table is created before users)
+            $table->foreignId('organization_id')->nullable()->constrained()->nullOnDelete();
+
     $table->string('barcode', 13)->nullable()->unique(); // uzupełniany w modelu po utworzeniu (potrzebuje ID)
              $table->string('name');
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
+
+            // Proof of consent given at registration (terms of service and GDPR information)
+            $table->timestamp('terms_accepted_at')->nullable();
+            $table->timestamp('privacy_accepted_at')->nullable();
             $table->string('password');
+
+            // Last successful login: UTC moment plus the time zone of the place it happened,
+            // so the local time at that location can be shown (e.g. Europe/Warsaw)
+            $table->timestamp('last_login_at')->nullable();
+            $table->string('last_login_timezone', 64)->nullable();
             $table->rememberToken();
             $table->timestamps();
         });

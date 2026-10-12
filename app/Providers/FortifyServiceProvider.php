@@ -8,6 +8,7 @@ use App\Http\Responses\LoginResponse;
 use App\Http\Responses\RegisterResponse;
 use App\Http\Responses\TwoFactorLoginResponse;
 use App\Http\Responses\VerifyEmailResponse;
+use App\Models\OrganizationInvitation;
 use App\Models\TeamInvitation;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -78,9 +79,21 @@ class FortifyServiceProvider extends ServiceProvider
             'status' => $request->session()->get('status'),
         ]));
 
-        Fortify::registerView(fn (Request $request) => Inertia::render('auth/register', [
-            'teamInvitation' => $this->teamInvitation($request),
-        ]));
+        // Rejestracja jest możliwa tylko z zaproszenia (do organizacji lub do zespołu)
+        Fortify::registerView(function (Request $request) {
+            $teamInvitation = $this->teamInvitation($request);
+            $organizationInvitation = $this->organizationInvitation($request);
+
+            if (! $teamInvitation && ! $organizationInvitation) {
+                return redirect()->route('login')
+                    ->with('status', 'Rejestracja jest możliwa tylko z zaproszenia.');
+            }
+
+            return Inertia::render('auth/register', [
+                'teamInvitation' => $teamInvitation,
+                'organizationInvitation' => $organizationInvitation,
+            ]);
+        });
 
         Fortify::twoFactorChallengeView(fn () => Inertia::render('auth/two-factor-challenge'));
 
@@ -109,6 +122,33 @@ class FortifyServiceProvider extends ServiceProvider
      *
      * @return array{code: string, teamName: string}|null
      */
+    /**
+     * Aktywne zaproszenie do organizacji z linku (query organization_invitation).
+     *
+     * @return array{code: string, email: string, organizationName: string|null, resendUrl: string}|null
+     */
+    private function organizationInvitation(Request $request): ?array
+    {
+        $token = $request->query('organization_invitation');
+
+        if (! is_string($token)) {
+            return null;
+        }
+
+        $invitation = OrganizationInvitation::with('organization')->where('code', $token)->first();
+
+        if (! $invitation?->isPending()) {
+            return null;
+        }
+
+        return [
+            'code' => $invitation->code,
+            'email' => $invitation->email,
+            'organizationName' => $invitation->organization?->name,
+            'resendUrl' => route('organization-invitations.resend', $invitation),
+        ];
+    }
+
     private function teamInvitation(Request $request): ?array
     {
         $invitationCode = $request->query('invitation');
@@ -120,6 +160,7 @@ class FortifyServiceProvider extends ServiceProvider
         $invitation = TeamInvitation::query()
             ->with('team')
             ->where('code', $invitationCode)
+            ->where('is_active', true)
             ->whereNull('accepted_at')
             ->where(fn ($query) => $query
                 ->whereNull('expires_at')
@@ -133,6 +174,7 @@ class FortifyServiceProvider extends ServiceProvider
         return [
             'code' => $invitation->code,
             'teamName' => $invitation->team->name,
+            'email' => $invitation->email,
         ];
     }
 }

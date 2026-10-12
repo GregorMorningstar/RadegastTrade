@@ -4,12 +4,15 @@ namespace App\Models;
 
 use App\Concerns\HasTeams;
 use App\Enums\UserRole;
+use App\Models\Concerns\GeneratesBarcode;
 use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
@@ -33,13 +36,16 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property-read Collection<int, Membership> $teamMemberships
  * @property-read Collection<int, Team> $teams
  * @property-read UserRole $role
+ * @property Carbon|null $last_login_at
+ * @property string|null $last_login_timezone
+ * @property-read Carbon|null $last_login_local
  */
-#[Fillable(['name', 'email', 'password', 'current_team_id', 'role', 'barcode'])]
+#[Fillable(['name', 'email', 'password', 'current_team_id', 'role', 'barcode', 'organization_id', 'terms_accepted_at', 'privacy_accepted_at', 'last_login_at', 'last_login_timezone'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, HasTeams, Notifiable, TwoFactorAuthenticatable;
+    use GeneratesBarcode, HasFactory, HasTeams, Notifiable, TwoFactorAuthenticatable;
 
     /**
      * Get the attributes that should be cast.
@@ -52,47 +58,35 @@ class User extends Authenticatable implements MustVerifyEmail
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
+            'terms_accepted_at' => 'datetime',
+            'privacy_accepted_at' => 'datetime',
+            'last_login_at' => 'datetime',
             'role' => UserRole::class,
         ];
     }
 
-    protected static function booted(): void
+    /**
+     * Czas ostatniego logowania w strefie czasowej miejsca, z którego się logowano.
+     */
+    protected function lastLoginLocal(): Attribute
     {
-        // ID jest znane dopiero po zapisie, więc barcode generujemy w "created"
-        static::created(function (User $user) {
-            if (blank($user->barcode)) {
-                $user->barcode = $user->generateBarcode();
-                $user->saveQuietly();
-            }
-        });
+        return Attribute::get(fn () => $this->last_login_at?->copy()->setTimezone(
+            $this->last_login_timezone ?: config('app.timezone'),
+        ));
+    }
+
+    protected function barcodeKey(): string
+    {
+        return 'user';
     }
 
     /**
-     * Prefiks EAN-13 dla kart użytkowników. Zakres 20-29 jest zarezerwowany przez GS1
-     * na użytek wewnętrzny i nie jest przydzielany producentom, więc nie koliduje
-     * z kodami produktów. Produkty wewnętrzne (bez EAN) powinny używać innego prefiksu, np. 21.
+     * Organizacja, do której należy użytkownik (np. po przyjęciu zaproszenia).
+     *
+     * @return BelongsTo<Organization, $this>
      */
-    public const BARCODE_PREFIX = '20';
-
-    /**
-     * Generuje poprawny EAN-13: prefiks + ID dopełnione zerami + cyfra kontrolna.
-     */
-    public function generateBarcode(): string
+    public function organization(): BelongsTo
     {
-        $bodyLength = 12 - strlen(self::BARCODE_PREFIX);
-        $body = str_pad((string) $this->id, $bodyLength, '0', STR_PAD_LEFT);
-
-        if (strlen($body) > $bodyLength) {
-            throw new \InvalidArgumentException('ID użytkownika jest za duże dla EAN-13.');
-        }
-
-        $base = self::BARCODE_PREFIX.$body;
-
-        $sum = 0;
-        foreach (str_split($base) as $i => $digit) {
-            $sum += (int) $digit * ($i % 2 === 0 ? 1 : 3);
-        }
-
-        return $base.((10 - $sum % 10) % 10);
+        return $this->belongsTo(Organization::class);
     }
 }

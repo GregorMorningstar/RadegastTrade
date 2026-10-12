@@ -10,6 +10,7 @@ use App\Models\Team;
 use App\Models\TeamInvitation;
 use App\Notifications\Teams\TeamInvitation as TeamInvitationNotification;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Notification;
@@ -42,13 +43,14 @@ class TeamInvitationController extends Controller
     /**
      * Cancel the specified invitation.
      */
-    public function destroy(Team $team, TeamInvitation $invitation): RedirectResponse
+    public function destroy(Request $request, Team $team, TeamInvitation $invitation): RedirectResponse
     {
         abort_unless($invitation->team_id === $team->id, 404);
 
         Gate::authorize('cancelInvitation', $team);
 
-        $invitation->delete();
+        // Zaproszenie zostaje w bazie jako wycofane: widać kiedy i przez kogo
+        $invitation->revoke($request->user());
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Invitation cancelled.')]);
 
@@ -70,7 +72,7 @@ class TeamInvitationController extends Controller
                 ['role' => $invitation->role],
             );
 
-            $invitation->update(['accepted_at' => now()]);
+            $invitation->update(['accepted_at' => now(), 'is_active' => false]);
 
             $user->switchTeam($team);
         });
@@ -85,7 +87,7 @@ class TeamInvitationController extends Controller
      */
     public function decline(RespondToTeamInvitationRequest $request, TeamInvitation $invitation): RedirectResponse
     {
-        $invitation->delete();
+        $invitation->revoke($request->user());
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Invitation declined.')]);
 

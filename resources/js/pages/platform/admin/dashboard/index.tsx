@@ -1,5 +1,5 @@
 import { Head } from '@inertiajs/react';
-import { Boxes, Building2, ShieldCheck, Users } from 'lucide-react';
+import { Building2, Network, ShieldCheck, Users } from 'lucide-react';
 import {
     Card,
     Content,
@@ -10,7 +10,7 @@ import {
 type Props = {
     stats: {
         users: number;
-        products: number;
+        organizations: number;
         teams: number;
         roles: number;
     };
@@ -20,6 +20,7 @@ type Props = {
         email: string;
         role: string;
         barcode: string | null;
+        last_login: string | null;
     }[];
 };
 
@@ -38,7 +39,7 @@ export default function AdminDashboard({ stats, latestUsers }: Props) {
             <Content>
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     <SmallBox color="info" value={stats.users} label="Użytkownicy" icon={Users} />
-                    <SmallBox color="success" value={stats.products} label="Produkty" icon={Boxes} />
+                    <SmallBox color="success" value={stats.organizations} label="Organizacje" icon={Network} />
                     <SmallBox color="warning" value={stats.teams} label="Zespoły" icon={Building2} />
                     <SmallBox color="danger" value={stats.roles} label="Role w systemie" icon={ShieldCheck} />
                 </div>
@@ -52,7 +53,8 @@ export default function AdminDashboard({ stats, latestUsers }: Props) {
                                     <th className="py-2 pr-4 font-semibold">Nazwa</th>
                                     <th className="py-2 pr-4 font-semibold">E-mail</th>
                                     <th className="py-2 pr-4 font-semibold">Rola</th>
-                                    <th className="py-2 font-semibold">Barcode</th>
+                                    <th className="py-2 pr-4 font-semibold">Barcode</th>
+                                    <th className="py-2 font-semibold">Ostatnie logowanie</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -66,7 +68,8 @@ export default function AdminDashboard({ stats, latestUsers }: Props) {
                                                 {user.role}
                                             </span>
                                         </td>
-                                        <td className="py-2 font-mono">{user.barcode}</td>
+                                        <td className="py-2 pr-4 font-mono">{user.barcode}</td>
+                                        <td className="py-2">{user.last_login ?? '—'}</td>
                                     </tr>
                                 ))}
                             </tbody>

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AcceptOrganizationInvitationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Platform;
 use App\Http\Controllers\Shop;
@@ -10,13 +11,17 @@ use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
 
+// Dokumenty prawne (dostępne bez logowania, linkowane z rejestracji)
+Route::inertia('regulamin', 'legal/terms')->name('legal.terms');
+Route::inertia('rodo', 'legal/privacy')->name('legal.privacy');
+
 Route::prefix('{current_team}')
     ->middleware(['auth', 'verified', EnsureTeamMembership::class])
     ->group(function () {
         Route::get('dashboard', DashboardController::class)->name('dashboard');
     });
 
-// Platforma: admin, manager, employee
+// Platforma: admin, manager, employee, właściciel organizacji
 Route::prefix('platform')
     ->name('platform.')
     ->middleware(['auth', 'verified'])
@@ -24,6 +29,27 @@ Route::prefix('platform')
         Route::prefix('admin')->name('admin.')->middleware('role:admin')->group(function () {
             Route::get('/', [Platform\AdminController::class, 'index'])->name('index');
             Route::get('dashboard', [Platform\AdminController::class, 'dashboard'])->name('dashboard');
+
+            Route::get('organizations', [Platform\Admin\OrganizationController::class, 'index'])->name('organizations.index');
+            Route::get('organizations/create', [Platform\Admin\OrganizationController::class, 'create'])->name('organizations.create');
+            Route::post('organizations/invitations', [Platform\Admin\OrganizationInvitationController::class, 'storeNew'])
+                ->middleware('throttle:20,1')
+                ->name('organizations.invitations.store-new');
+            Route::post('organizations/{organization}/invitations', [Platform\Admin\OrganizationInvitationController::class, 'store'])
+                ->middleware('throttle:20,1')
+                ->name('organizations.invitations.store');
+            Route::delete('organizations/invitations/{invitation:id}', [Platform\Admin\OrganizationInvitationController::class, 'destroy'])
+                ->name('organizations.invitations.destroy');
+
+            Route::prefix('warehouses')->name('warehouses.')->group(function () {
+                Route::get('headquarters', [Platform\Admin\WarehouseHeadquarterController::class, 'index'])->name('headquarters.index');
+                Route::get('branches', [Platform\Admin\WarehouseBranchController::class, 'index'])->name('branches.index');
+            });
+
+            Route::prefix('shops')->name('shops.')->group(function () {
+                Route::get('headquarters', [Platform\Admin\ShopHeadquarterController::class, 'index'])->name('headquarters.index');
+                Route::get('branches', [Platform\Admin\ShopBranchController::class, 'index'])->name('branches.index');
+            });
         });
 
         Route::prefix('manager')->name('manager.')->middleware('role:manager')->group(function () {
@@ -34,6 +60,21 @@ Route::prefix('platform')
         Route::prefix('employee')->name('employee.')->middleware('role:employee')->group(function () {
             Route::get('/', [Platform\EmployeeController::class, 'index'])->name('index');
             Route::get('dashboard', [Platform\EmployeeController::class, 'dashboard'])->name('dashboard');
+        });
+
+        // Właściciel organizacji (zapraszany przez administratora)
+        Route::prefix('organization')->name('organization.')->middleware('role:organization_owner')->group(function () {
+            Route::get('/', [Platform\OrganizationOwnerController::class, 'index'])->name('index');
+            Route::get('dashboard', [Platform\OrganizationOwnerController::class, 'dashboard'])->name('dashboard');
+            Route::get('nip-lookup', [Platform\OrganizationOwnerController::class, 'nipLookup'])
+                ->middleware('throttle:20,1')
+                ->name('nip-lookup');
+            Route::get('setup', [Platform\OrganizationOwnerController::class, 'setup'])->name('setup');
+            Route::post('setup', [Platform\OrganizationOwnerController::class, 'storeSetup'])->name('setup.store');
+
+            // Na razie tylko widoki, bez backendu
+            Route::inertia('shops', 'platform/organization/shops/index')->name('shops');
+            Route::inertia('warehouses', 'platform/organization/warehouses/index')->name('warehouses');
         });
     });
 
@@ -79,7 +120,20 @@ Route::prefix('shop')
         });
     });
 
+// Link z maila: gość bez konta trafia na rejestrację (e-mail wypełniony z zaproszenia), gość z kontem
+// na logowanie, a zalogowany widzi pole na klucz. Po rejestracji/logowaniu wraca na ten link.
+Route::get('organization-invitations/{invitation}', [AcceptOrganizationInvitationController::class, 'show'])
+    ->name('organization-invitations.show');
+
+Route::post('organization-invitations/{invitation}/resend', [AcceptOrganizationInvitationController::class, 'resend'])
+    ->middleware('throttle:5,10')
+    ->name('organization-invitations.resend');
+
 Route::middleware(['auth'])->group(function () {
+    Route::post('organization-invitations/{invitation}', [AcceptOrganizationInvitationController::class, 'store'])
+        ->middleware('throttle:10,1')
+        ->name('organization-invitations.store');
+
     Route::post('invitations/{invitation}/accept', [TeamInvitationController::class, 'accept'])->name('invitations.accept');
     Route::delete('invitations/{invitation}', [TeamInvitationController::class, 'decline'])->name('invitations.decline');
 });

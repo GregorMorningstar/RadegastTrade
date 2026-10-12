@@ -19,6 +19,9 @@ type Props = {
     teamInvitation?: TeamInvitationContext | null;
 };
 
+// Strefa czasowa miejsca logowania: zapisujemy ją razem z czasem ostatniego logowania
+const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 export default function Login({
     status,
     canResetPassword,
@@ -42,6 +45,8 @@ export default function Login({
             >
                 {({ processing, errors }) => (
                     <>
+                        <input type="hidden" name="timezone" value={timezone} />
+
                         <div className="grid gap-6">
                             <div className="grid gap-2">
                                 <Label htmlFor="email">Email address</Label>
@@ -103,20 +108,23 @@ export default function Login({
                             </Button>
                         </div>
 
-                        <div className="text-center text-sm text-muted-foreground">
-                            Don't have an account?{' '}
-                            <TextLink
-                                href={register({
-                                    query: {
-                                        invitation: teamInvitation?.code,
-                                    },
-                                })}
-                                data-test="register-link"
-                                tabIndex={5}
-                            >
-                                Sign up
-                            </TextLink>
-                        </div>
+                        {/* Rejestracja tylko z zaproszenia: link pojawia się wyłącznie dla zaproszonych do zespołu */}
+                        {teamInvitation && (
+                            <div className="text-center text-sm text-muted-foreground">
+                                Nie masz jeszcze konta?{' '}
+                                <TextLink
+                                    href={register({
+                                        query: {
+                                            invitation: teamInvitation.code,
+                                        },
+                                    })}
+                                    data-test="register-link"
+                                    tabIndex={5}
+                                >
+                                    Zarejestruj się z zaproszenia
+                                </TextLink>
+                            </div>
+                        )}
                     </>
                 )}
             </Form>

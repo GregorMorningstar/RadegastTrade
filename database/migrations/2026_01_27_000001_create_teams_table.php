@@ -39,6 +39,15 @@ return new class extends Migration
             $table->foreignId('invited_by')->constrained('users')->cascadeOnDelete();
             $table->timestamp('expires_at')->nullable();
             $table->timestamp('accepted_at')->nullable();
+
+            // Whether the invitation can still be used. Set to false when it is accepted,
+            // declined by the invitee or withdrawn by the team.
+            $table->boolean('is_active')->default(true);
+
+            // When and by whom the invitation was withdrawn (cancelled by the team or declined by the invitee)
+            $table->timestamp('revoked_at')->nullable();
+            $table->foreignId('revoked_by')->nullable()->constrained('users')->nullOnDelete();
+
             $table->timestamps();
         });
     }

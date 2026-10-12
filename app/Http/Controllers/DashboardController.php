@@ -16,6 +16,7 @@ class DashboardController extends Controller
         $pendingInvitations = TeamInvitation::query()
             ->with(['inviter', 'team'])
             ->whereRaw('LOWER(email) = ?', [$email])
+            ->where('is_active', true)
             ->whereNull('accepted_at')
             ->where(fn ($query) => $query
                 ->whereNull('expires_at')

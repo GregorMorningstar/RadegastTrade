@@ -30,6 +30,7 @@ export type TeamInvitation = {
 export type TeamInvitationContext = {
     code: string;
     teamName: string;
+    email?: string;
 };
 
 export type DashboardInvitation = {

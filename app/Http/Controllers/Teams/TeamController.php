@@ -36,6 +36,9 @@ class TeamController extends Controller
      */
     public function store(SaveTeamRequest $request, CreateTeam $createTeam): RedirectResponse
     {
+        // Nowych zespołów nie zakłada się z ustawień: zespoły powstają razem z kontami
+        abort(403, 'Dodawanie nowych zespołów jest wyłączone.');
+
         $team = $createTeam->handle($request->user(), $request->validated('name'));
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Team created.')]);
@@ -71,6 +74,7 @@ class TeamController extends Controller
                 ];
             }),
             'invitations' => $team->invitations()
+                ->where('is_active', true)
                 ->whereNull('accepted_at')
                 ->get()
                 ->map(fn ($invitation) => [

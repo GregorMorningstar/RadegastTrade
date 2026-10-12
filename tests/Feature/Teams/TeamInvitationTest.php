@@ -166,9 +166,57 @@ test('team invitations can be cancelled by owners', function () {
 
     $response->assertRedirect(route('teams.edit', $team));
 
-    $this->assertDatabaseMissing('team_invitations', [
+    // zaproszenie zostaje w bazie jako wycofane: widać kiedy i przez kogo
+    $this->assertDatabaseHas('team_invitations', [
         'id' => $invitation->id,
+        'is_active' => false,
+        'revoked_by' => $owner->id,
     ]);
+
+    expect($invitation->fresh()->revoked_at)->not->toBeNull()
+        ->and($invitation->fresh()->isPending())->toBeFalse()
+        ->and($invitation->fresh()->revoker->is($owner))->toBeTrue();
+});
+
+test('cancelled team invitations disappear from the team page and cannot be used', function () {
+    $owner = User::factory()->create();
+    $invited = User::factory()->create(['email' => 'invited@example.com']);
+    $team = Team::factory()->create();
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+
+    $invitation = TeamInvitation::factory()->revoked($owner)->create([
+        'team_id' => $team->id,
+        'email' => 'invited@example.com',
+        'invited_by' => $owner->id,
+    ]);
+
+    $this->actingAs($owner)
+        ->get(route('teams.edit', $team))
+        ->assertInertia(fn ($page) => $page->has('invitations', 0));
+
+    $this->actingAs($invited)
+        ->post(route('invitations.accept', $invitation))
+        ->assertSessionHasErrors('invitation');
+
+    expect($team->members()->where('users.id', $invited->id)->exists())->toBeFalse();
+});
+
+test('accepting an invitation deactivates it', function () {
+    $owner = User::factory()->create();
+    $invited = User::factory()->create(['email' => 'invited@example.com']);
+    $team = Team::factory()->create();
+
+    $invitation = TeamInvitation::factory()->create([
+        'team_id' => $team->id,
+        'email' => 'invited@example.com',
+        'invited_by' => $owner->id,
+    ]);
+
+    $this->actingAs($invited)->post(route('invitations.accept', $invitation));
+
+    expect($invitation->fresh()->accepted_at)->not->toBeNull()
+        ->and($invitation->fresh()->is_active)->toBeFalse()
+        ->and($invitation->fresh()->revoked_at)->toBeNull();
 });
 
 test('team invitations can be accepted', function () {
@@ -215,9 +263,14 @@ test('team invitations can be declined by the invited user', function () {
 
     $response->assertRedirect(route('dashboard'));
 
-    $this->assertDatabaseMissing('team_invitations', [
+    // odrzucone zaproszenie jest wycofane przez zaproszonego użytkownika
+    $this->assertDatabaseHas('team_invitations', [
         'id' => $invitation->id,
+        'is_active' => false,
+        'revoked_by' => $invitedUser->id,
     ]);
+
+    expect($invitation->fresh()->revoked_at)->not->toBeNull();
 });
 
 test('team invitations cannot be declined by uninvited user', function () {

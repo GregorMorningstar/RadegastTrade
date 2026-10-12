@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests\Products;
 
-use App\Models\User;
 use App\Support\Barcode;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -24,10 +23,11 @@ class StoreProductRequest extends FormRequest
                 'required',
                 'digits:13',
                 'unique:products,barcode',
-                // prefiks kart użytkowników jest zarezerwowany
-                'not_regex:/^'.User::BARCODE_PREFIX.'/',
                 fn ($attribute, $value, $fail) => Barcode::isValidEan13((string) $value)
                     ?: $fail('Niepoprawna cyfra kontrolna EAN-13.'),
+                // prefiksy użytkowników, organizacji i siedzib są zarezerwowane dla systemu
+                fn ($attribute, $value, $fail) => ! Barcode::usesEntityPrefix((string) $value)
+                    ?: $fail('Ten prefiks kodu jest zarezerwowany dla kart i placówek systemu.'),
             ],
         ];
     }

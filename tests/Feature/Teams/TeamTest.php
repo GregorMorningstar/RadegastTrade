@@ -15,18 +15,39 @@ test('the teams index page can be rendered', function () {
     $response->assertOk();
 });
 
-test('teams can be created', function () {
+test('new teams cannot be created from settings', function () {
     $user = User::factory()->create();
 
-    $response = $this
+    $this
         ->actingAs($user)
         ->post(route('teams.store'), [
             'name' => 'Test Team',
-        ]);
+        ])
+        ->assertForbidden();
 
-    $response->assertRedirect();
+    $this->assertDatabaseMissing('teams', [
+        'name' => 'Test Team',
+    ]);
+});
+
+test('the teams settings page has no button for adding a team', function () {
+    $this
+        ->actingAs(User::factory()->create())
+        ->get(route('teams.index'))
+        ->assertOk();
+
+    expect(file_get_contents(resource_path('js/pages/teams/index.tsx')))
+        ->not->toContain('CreateTeamModal')
+        ->not->toContain('teams-new-team-button');
+});
+
+test('teams can still be created programmatically', function () {
+    $user = User::factory()->create();
+
+    $team = app(App\Actions\Teams\CreateTeam::class)->handle($user, 'Test Team');
 
     $this->assertDatabaseHas('teams', [
+        'id' => $team->id,
         'name' => 'Test Team',
         'is_personal' => false,
     ]);
@@ -39,11 +60,7 @@ test('team slug uses next available suffix', function () {
     Team::factory()->create(['name' => 'Acme One', 'slug' => 'acme-1']);
     Team::factory()->create(['name' => 'Acme Ten', 'slug' => 'acme-10']);
 
-    $this
-        ->actingAs($user)
-        ->post(route('teams.store'), [
-            'name' => 'Acme',
-        ]);
+    app(App\Actions\Teams\CreateTeam::class)->handle($user, 'Acme');
 
     $this->assertDatabaseHas('teams', [
         'name' => 'Acme',

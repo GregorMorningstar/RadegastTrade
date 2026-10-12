@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Platform;
 
 use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
-use App\Models\Product;
+use App\Models\Organization;
 use App\Models\Team;
 use App\Models\User;
 use Inertia\Inertia;
@@ -22,7 +22,7 @@ class AdminController extends Controller
         return Inertia::render('platform/admin/dashboard/index', [
             'stats' => [
                 'users' => User::count(),
-                'products' => Product::count(),
+                'organizations' => Organization::count(),
                 'teams' => Team::count(),
                 'roles' => count(UserRole::cases()),
             ],
@@ -36,6 +36,9 @@ class AdminController extends Controller
                     'email' => $user->email,
                     'role' => $user->role->label(),
                     'barcode' => $user->barcode,
+                    'last_login' => $user->last_login_local
+                        ? $user->last_login_local->format('d.m.Y H:i').' ('.$user->last_login_local->getTimezone()->getName().')'
+                        : null,
                 ]),
         ]);
     }
