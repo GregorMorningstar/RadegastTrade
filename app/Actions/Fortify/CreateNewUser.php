@@ -18,7 +18,7 @@ class CreateNewUser implements CreatesNewUsers
 {
     use PasswordValidationRules, ProfileValidationRules;
 
-    public function __construct(private CreateTeam $createTeam)
+    public function __construct(private readonly CreateTeam $createTeam)
     {
         //
     }
@@ -26,10 +26,10 @@ class CreateNewUser implements CreatesNewUsers
     /**
      * Validate and create a newly registered user.
      *
-     * Rejestracja jest możliwa WYŁĄCZNIE z zaproszenia:
-     * - do organizacji (organization_invitation + invitation_key): konto od razu dostaje rolę
-     *   z zaproszenia, np. ORGANIZATION_OWNER,
-     * - do zespołu (team_invitation): konto dostaje domyślną rolę, a zaproszenie przyjmuje się potem.
+     * Registration is possible ONLY with an invitation:
+     * - to an organization (organization_invitation + invitation_key): the account gets the role
+     *   from the invitation right away, e.g. ORGANIZATION_OWNER,
+     * - to a team (team_invitation): the account gets the default role and the invitation is accepted later.
      *
      * @param  array<string, string>  $input
      */
@@ -57,7 +57,7 @@ class CreateNewUser implements CreatesNewUsers
 
         $invitedEmail = $organizationInvitation?->email ?? $teamInvitation->email;
 
-        // Adres w formularzu musi być tym, na który wysłano zaproszenie
+        // The address in the form must be the one the invitation was sent to
         if (strtolower($input['email']) !== strtolower($invitedEmail)) {
             throw ValidationException::withMessages([
                 'email' => 'Podaj adres e-mail, na który wysłano zaproszenie.',
@@ -72,16 +72,21 @@ class CreateNewUser implements CreatesNewUsers
             $user = User::create([
                 'name' => $input['name'],
                 'email' => $input['email'],
+                'phone' => $organizationInvitation?->phone,
                 'password' => $input['password'],
-                // domyślna, najmniej uprzywilejowana rola albo rola z zaproszenia do organizacji
+                // default, least privileged role, or the role from the organization invitation
                 'role' => $organizationInvitation?->role ?? UserRole::Employee,
                 'organization_id' => $organizationInvitation?->organization_id,
+                'shop_headquarter_id' => $organizationInvitation?->shop_headquarter_id,
+                'warehouse_headquarter_id' => $organizationInvitation?->warehouse_headquarter_id,
+                'shop_branch_id' => $organizationInvitation?->shop_branch_id,
+                'warehouse_branch_id' => $organizationInvitation?->warehouse_branch_id,
                 'terms_accepted_at' => now(),
                 'privacy_accepted_at' => now(),
             ]);
 
             if ($organizationInvitation) {
-                // Klucz z maila potwierdza dostęp do skrzynki, więc adres jest zweryfikowany
+                // The key from the email proves access to the mailbox, so the address is verified
                 $user->markEmailAsVerified();
                 $organizationInvitation->markAccepted();
             }
@@ -137,7 +142,7 @@ class CreateNewUser implements CreatesNewUsers
     }
 
     /**
-     * Sprawdza klucz z maila; błędny klucz zwiększa licznik prób zaproszenia.
+     * Checks the key from the email; a wrong key increments the invitation's attempt counter.
      */
     private function verifyKey(OrganizationInvitation $invitation, string $key): void
     {

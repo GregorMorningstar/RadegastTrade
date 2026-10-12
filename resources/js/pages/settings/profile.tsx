@@ -1,10 +1,11 @@
-import { Form, Head, usePage } from '@inertiajs/react';
+import { Form, Head, router, useForm, usePage } from '@inertiajs/react';
 import { Link } from '@inertiajs/react';
 import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
 import DeleteUser from '@/components/delete-user';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
+import UserAvatar from '@/components/user-avatar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { edit } from '@/routes/profile';
@@ -14,6 +15,60 @@ import { send } from '@/routes/verification';
 type PageProps = {
     auth: Auth;
 };
+
+function AvatarSection() {
+    const { auth } = usePage<PageProps>().props;
+    const form = useForm<{ avatar: File | null }>({ avatar: null });
+    const preview = form.data.avatar ? URL.createObjectURL(form.data.avatar) : null;
+
+    const upload = () => {
+        form.post('/settings/profile/avatar', {
+            forceFormData: true,
+            preserveScroll: true,
+            onSuccess: () => form.reset(),
+        });
+    };
+
+    return (
+        <div className="space-y-4">
+            <Heading
+                variant="small"
+                title="Zdjęcie profilowe"
+                description="Widoczne w menu, nagłówku i czacie. Bez zdjęcia pokazujemy domyślny awatar."
+            />
+
+            <div className="flex flex-wrap items-center gap-4">
+                <UserAvatar src={preview ?? auth.user.avatar_url} name={auth.user.name} size={96} />
+
+                <div className="space-y-2">
+                    <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        onChange={(e) => form.setData('avatar', e.target.files?.[0] ?? null)}
+                        className="block text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">JPG, PNG lub WEBP, do 2 MB, od 64 do 4000 px.</p>
+                    <InputError message={form.errors.avatar} />
+
+                    <div className="flex gap-2">
+                        <Button type="button" onClick={upload} disabled={!form.data.avatar || form.processing}>
+                            Zapisz zdjęcie
+                        </Button>
+                        {auth.user.avatar_path && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => router.delete('/settings/profile/avatar', { preserveScroll: true })}
+                            >
+                                Usuń zdjęcie
+                            </Button>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 export default function Profile({
     mustVerifyEmail,
@@ -31,6 +86,8 @@ export default function Profile({
             <h1 className="sr-only">Profile settings</h1>
 
             <div className="space-y-6">
+                <AvatarSection />
+
                 <Heading
                     variant="small"
                     title="Profile"

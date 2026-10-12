@@ -11,12 +11,12 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 /**
- * Zaproszenie właściciela organizacji wysyłane przez administratora.
+ * Organization owner invitation sent by the administrator.
  *
- * Zabezpieczenia: link z losowym tokenem, 6-cyfrowy kod z maila (w bazie tylko hash),
- * dopasowanie adresu e-mail konta, wygasanie oraz limit błędnych prób kodu.
+ * Safeguards: a link with a random token, a 6-digit code from the email (only its hash is stored),
+ * matching the account's email address, expiry and a limit on wrong code attempts.
  */
-#[Fillable(['organization_id', 'email', 'role', 'invited_by', 'expires_at', 'accepted_at', 'is_active', 'revoked_at', 'revoked_by'])]
+#[Fillable(['organization_id', 'shop_headquarter_id', 'warehouse_headquarter_id', 'shop_branch_id', 'warehouse_branch_id', 'email', 'phone', 'role', 'invited_by', 'expires_at', 'accepted_at', 'is_active', 'revoked_at', 'revoked_by'])]
 #[Hidden(['verification_code'])]
 class OrganizationInvitation extends Model
 {
@@ -30,19 +30,33 @@ class OrganizationInvitation extends Model
     }
 
     /**
-     * Tworzy zaproszenie i zwraca je razem z jawnym kodem weryfikacyjnym (tylko do wysłania mailem).
-     * Bez organizacji to zaproszenie do założenia nowej: nazwę i dane podaje zapraszana osoba.
+     * Creates the invitation and returns it along with the plain verification code (only to be sent by email).
+     * Without an organization it is an invitation to create a new one: the invited person provides the name and details.
+     *
+     * With a headquarters it is an invitation for its manager (role SHOP_OWNER / WAREHOUSE_OWNER).
      *
      * @return array{0: OrganizationInvitation, 1: string}
      */
-    public static function issue(?Organization $organization, string $email, User $inviter): array
-    {
+    public static function issue(
+        ?Organization $organization,
+        string $email,
+        User $inviter,
+        UserRole $role = UserRole::ORGANIZATION_OWNER,
+        ShopHeadquarter|WarehouseHeadquarter|null $headquarter = null,
+        ?string $phone = null,
+        ShopBranch|WarehouseBranch|null $branch = null,
+    ): array {
         $plainCode = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
 
         $invitation = new self([
             'organization_id' => $organization?->id,
             'email' => strtolower($email),
-            'role' => UserRole::ORGANIZATION_OWNER,
+            'phone' => $phone,
+            'shop_headquarter_id' => $headquarter instanceof ShopHeadquarter ? $headquarter->id : ($branch instanceof ShopBranch ? $branch->shop_headquarter_id : null),
+            'warehouse_headquarter_id' => $headquarter instanceof WarehouseHeadquarter ? $headquarter->id : ($branch instanceof WarehouseBranch ? $branch->warehouse_headquarter_id : null),
+            'shop_branch_id' => $branch instanceof ShopBranch ? $branch->id : null,
+            'warehouse_branch_id' => $branch instanceof WarehouseBranch ? $branch->id : null,
+            'role' => $role,
             'invited_by' => $inviter->id,
             'expires_at' => now()->addDays(3),
         ]);
@@ -53,8 +67,8 @@ class OrganizationInvitation extends Model
     }
 
     /**
-     * Generuje nowy klucz (stary przestaje działać) i zeruje licznik błędnych prób.
-     * Zwraca jawny klucz tylko do wysłania mailem.
+     * Generates a new key (the old one stops working) and resets the wrong-attempt counter.
+     * Returns the plain key only to be sent by email.
      */
     public function regenerateCode(): string
     {
@@ -79,7 +93,7 @@ class OrganizationInvitation extends Model
     }
 
     /**
-     * Wycofuje zaproszenie, zapamiętując kiedy i przez kogo.
+     * Revokes the invitation, recording when and by whom.
      */
     public function revoke(User $by): void
     {
@@ -96,7 +110,7 @@ class OrganizationInvitation extends Model
     }
 
     /**
-     * Przyjmuje zaproszenie: zapisuje datę i dezaktywuje je.
+     * Accepts the invitation: stores the date and deactivates it.
      */
     public function markAccepted(): void
     {
@@ -104,7 +118,7 @@ class OrganizationInvitation extends Model
     }
 
     /**
-     * Użytkownik, który wycofał zaproszenie.
+     * The user who revoked the invitation.
      *
      * @return BelongsTo<User, $this>
      */
@@ -134,6 +148,46 @@ class OrganizationInvitation extends Model
     public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
+    }
+
+    /**
+     * @return BelongsTo<ShopHeadquarter, $this>
+     */
+    public function shopHeadquarter(): BelongsTo
+    {
+        return $this->belongsTo(ShopHeadquarter::class);
+    }
+
+    /**
+     * @return BelongsTo<WarehouseHeadquarter, $this>
+     */
+    public function warehouseHeadquarter(): BelongsTo
+    {
+        return $this->belongsTo(WarehouseHeadquarter::class);
+    }
+
+    /**
+     * @return BelongsTo<ShopBranch, $this>
+     */
+    public function shopBranch(): BelongsTo
+    {
+        return $this->belongsTo(ShopBranch::class);
+    }
+
+    /**
+     * @return BelongsTo<WarehouseBranch, $this>
+     */
+    public function warehouseBranch(): BelongsTo
+    {
+        return $this->belongsTo(WarehouseBranch::class);
+    }
+
+    /**
+     * The headquarters the invitation is for (null for an organization owner invitation).
+     */
+    public function headquarter(): ShopHeadquarter|WarehouseHeadquarter|null
+    {
+        return $this->shopHeadquarter ?? $this->warehouseHeadquarter;
     }
 
     /**

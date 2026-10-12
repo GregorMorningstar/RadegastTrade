@@ -1,0 +1,77 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::create('shop_branches', function (Blueprint $table) {
+            $table->id();
+
+            // Organization the branch belongs to (taken from the invitation, never from a form)
+            $table->foreignId('organization_id')
+                ->constrained()
+                ->cascadeOnDelete();
+
+            // Shop headquarters the branch belongs to
+            $table->foreignId('shop_headquarter_id')
+                ->constrained()
+                ->cascadeOnDelete();
+
+            // Name of the branch (unique within the headquarters)
+            $table->string('name');
+
+            // Unique EAN-13 barcode assigned to the branch
+            $table->string('barcode', 13)->nullable()->unique();
+
+            // Tax ID (NIP). NOT unique: a branch may share the NIP of its organization or headquarters.
+            $table->string('NIP', 10)->nullable()->index();
+
+            // Branch email address
+            $table->string('email')->nullable();
+
+            // Branch phone number
+            $table->string('phone', 20)->nullable();
+
+            // Street name
+            $table->string('street')->nullable();
+
+            // Building number
+            $table->string('building_number', 20)->nullable();
+
+            // Apartment or office number
+            $table->string('apartment_number', 20)->nullable();
+
+            // Postal code
+            $table->string('postal_code', 10)->nullable();
+
+            // City name
+            $table->string('city')->nullable();
+
+            // Country code in ISO 3166-1 alpha-2 format, e.g. PL
+            $table->string('country', 2)->default('PL');
+
+            // Determines whether the branch is active
+            $table->boolean('is_active')->default(true);
+
+            $table->timestamps();
+
+            // The same name cannot be used twice within one headquarters
+            $table->unique(['shop_headquarter_id', 'name']);
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('shop_branches');
+    }
+};

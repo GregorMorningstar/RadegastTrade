@@ -11,8 +11,8 @@ use Symfony\Component\HttpFoundation\Response;
 class EnsureUserHasRole
 {
     /**
-     * Przepuszcza tylko użytkowników z jedną z podanych ról.
-     * Użycie: ->middleware('role:admin,manager')
+     * Lets through only users with one of the given roles.
+     * Usage: ->middleware('role:admin,manager')
      */
     public function handle(Request $request, Closure $next, string ...$roles): Response
     {
@@ -33,7 +33,7 @@ class EnsureUserHasRole
 
         abort_if($request->expectsJson(), 403);
 
-        // Strona z animacją, która po chwili przekieruje na dashboard roli użytkownika
+        // A page with an animation that shortly redirects to the user's role dashboard
         return ErrorPage::redirecting($request, 'errors/forbidden', 403);
     }
 }

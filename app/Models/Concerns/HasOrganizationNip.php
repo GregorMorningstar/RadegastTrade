@@ -6,9 +6,9 @@ use App\Models\Organization;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Zasada NIP dla siedzib i placówek:
- * - mogą mieć ten sam NIP co ich organizacja (kolumna NIP nie jest unikalna),
- * - nie mogą mieć NIP-u innej organizacji.
+ * NIP rule for headquarters and branches:
+ * - they may have the same NIP as their organization (the NIP column is not unique),
+ * - they must not have another organization's NIP.
  */
 trait HasOrganizationNip
 {
@@ -33,7 +33,7 @@ trait HasOrganizationNip
     }
 
     /**
-     * Własny NIP siedziby albo NIP organizacji, jeśli siedziba go nie podaje.
+     * The headquarters' own NIP, or the organization's NIP if the headquarters has none.
      */
     public function effectiveNip(): ?string
     {

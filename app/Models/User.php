@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 
 /**
@@ -40,10 +41,13 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string|null $last_login_timezone
  * @property-read Carbon|null $last_login_local
  */
-#[Fillable(['name', 'email', 'password', 'current_team_id', 'role', 'barcode', 'organization_id', 'terms_accepted_at', 'privacy_accepted_at', 'last_login_at', 'last_login_timezone'])]
+#[Fillable(['name', 'email', 'phone', 'avatar_path', 'last_seen_at', 'password', 'current_team_id', 'role', 'barcode', 'organization_id', 'shop_headquarter_id', 'warehouse_headquarter_id', 'shop_branch_id', 'warehouse_branch_id', 'terms_accepted_at', 'privacy_accepted_at', 'last_login_at', 'last_login_timezone'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements MustVerifyEmail
 {
+    /** @var list<string> */
+    protected $appends = ['avatar_url'];
+
     /** @use HasFactory<UserFactory> */
     use GeneratesBarcode, HasFactory, HasTeams, Notifiable, TwoFactorAuthenticatable;
 
@@ -61,12 +65,31 @@ class User extends Authenticatable implements MustVerifyEmail
             'terms_accepted_at' => 'datetime',
             'privacy_accepted_at' => 'datetime',
             'last_login_at' => 'datetime',
+            'last_seen_at' => 'datetime',
             'role' => UserRole::class,
         ];
     }
 
     /**
-     * Czas ostatniego logowania w strefie czasowej miejsca, z którego się logowano.
+     * Profile photo URL; the default avatar when there is no photo.
+     */
+    protected function avatarUrl(): Attribute
+    {
+        return Attribute::get(fn () => $this->avatar_path
+            ? Storage::disk('public')->url($this->avatar_path)
+            : asset('images/default-avatar.svg'));
+    }
+
+    /**
+     * Whether the user was active in the last two minutes (a tab with the app open).
+     */
+    public function isActive(): bool
+    {
+        return $this->last_seen_at !== null && $this->last_seen_at->gt(now()->subSeconds(120));
+    }
+
+    /**
+     * Last login time in the time zone of the place the user logged in from.
      */
     protected function lastLoginLocal(): Attribute
     {
@@ -81,12 +104,52 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
-     * Organizacja, do której należy użytkownik (np. po przyjęciu zaproszenia).
+     * The organization the user belongs to (e.g. after accepting an invitation).
      *
      * @return BelongsTo<Organization, $this>
      */
     public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
+    }
+
+    /**
+     * The shop headquarters managed by the manager.
+     *
+     * @return BelongsTo<ShopHeadquarter, $this>
+     */
+    public function shopHeadquarter(): BelongsTo
+    {
+        return $this->belongsTo(ShopHeadquarter::class);
+    }
+
+    /**
+     * The shop branch managed by the branch leader.
+     *
+     * @return BelongsTo<ShopBranch, $this>
+     */
+    public function shopBranch(): BelongsTo
+    {
+        return $this->belongsTo(ShopBranch::class);
+    }
+
+    /**
+     * The warehouse branch managed by the branch leader.
+     *
+     * @return BelongsTo<WarehouseBranch, $this>
+     */
+    public function warehouseBranch(): BelongsTo
+    {
+        return $this->belongsTo(WarehouseBranch::class);
+    }
+
+    /**
+     * The warehouse headquarters managed by the manager.
+     *
+     * @return BelongsTo<WarehouseHeadquarter, $this>
+     */
+    public function warehouseHeadquarter(): BelongsTo
+    {
+        return $this->belongsTo(WarehouseHeadquarter::class);
     }
 }

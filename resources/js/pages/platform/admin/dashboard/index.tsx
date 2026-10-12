@@ -6,6 +6,7 @@ import {
     ContentHeader,
     SmallBox,
 } from '@/components/adminlte/blocks';
+import UserBarcodeCard from '@/components/user-barcode-card';
 
 type Props = {
     stats: {
@@ -76,6 +77,7 @@ export default function AdminDashboard({ stats, latestUsers }: Props) {
                         </table>
                     </div>
                 </Card>
+                <UserBarcodeCard className="mt-4 max-w-md" />
             </Content>
         </>
     );

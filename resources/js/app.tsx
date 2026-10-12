@@ -2,6 +2,7 @@ import { createInertiaApp } from '@inertiajs/react';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { initializeTheme } from '@/hooks/use-appearance';
+import { setupEcho } from '@/lib/echo';
 import AppLayout from '@/layouts/app-layout';
 import PlatformAdminLayout from '@/layouts/platform/admin/layout';
 import PlatformManagerLayout from '@/layouts/platform/manager/layout';
@@ -22,16 +23,25 @@ const roleLayouts: Record<string, React.ComponentType<{ children: React.ReactNod
     'platform/admin': PlatformAdminLayout,
     'platform/manager': PlatformManagerLayout,
     'platform/employee': PlatformEmployeeLayout,
-    'warehouse/owner': WarehouseOwnerLayout,
-    'warehouse/leader': WarehouseLeaderLayout,
-    'warehouse/worker': WarehouseWorkerLayout,
-    'shop/owner': ShopOwnerLayout,
-    'shop/leader': ShopLeaderLayout,
-    'shop/worker': ShopWorkerLayout,
+    'platform/warehouses/owner': WarehouseOwnerLayout,
+    'platform/warehouses/leader': WarehouseLeaderLayout,
+    'platform/warehouses/worker': WarehouseWorkerLayout,
+    'platform/shop/owner': ShopOwnerLayout,
+    'platform/shop/leader': ShopLeaderLayout,
+    'platform/shop/worker': ShopWorkerLayout,
     'platform/organization': OrganizationOwnerLayout,
 };
 
+// Klucz layoutu: najpierw trzy pierwsze segmenty (platform/shop/owner), potem dwa (platform/admin)
+function roleLayoutKey(name: string): string | null {
+    const parts = name.split('/');
+
+    return [parts.slice(0, 3).join('/'), parts.slice(0, 2).join('/')].find((key) => key in roleLayouts) ?? null;
+}
+
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+
+setupEcho();
 
 void createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),
@@ -45,12 +55,13 @@ void createInertiaApp({
                 return LegalLayout;
             case name.startsWith('auth/'):
                 return AuthLayout;
+            case name.startsWith('chat/'):
             case name.startsWith('settings/'):
             case name.startsWith('teams/'):
                 return [RoleLayout, SettingsLayout];
-            case name.split('/').slice(0, 2).join('/') in roleLayouts:
+            case roleLayoutKey(name) !== null:
                 // własny wygląd paneli ról (ciemne menu), bez wspólnego AppLayout
-                return roleLayouts[name.split('/').slice(0, 2).join('/')];
+                return roleLayouts[roleLayoutKey(name) as string];
             default:
                 return AppLayout;
         }

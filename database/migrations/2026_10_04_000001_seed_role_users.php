@@ -10,7 +10,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Konta testowe ze znanym hasłem tylko na środowiskach deweloperskich.
+        // Test accounts with a known password only in development environments.
         if (app()->environment('production')) {
             return;
         }
@@ -23,6 +23,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        // Celowo puste: nie usuwamy kont, bo mogły zostać zmienione po utworzeniu.
+        // Intentionally empty: accounts are not removed because they may have been changed after creation.
     }
 };

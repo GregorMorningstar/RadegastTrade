@@ -49,7 +49,7 @@ class TeamInvitationController extends Controller
 
         Gate::authorize('cancelInvitation', $team);
 
-        // Zaproszenie zostaje w bazie jako wycofane: widać kiedy i przez kogo
+        // The invitation stays in the database as revoked: it shows when and by whom
         $invitation->revoke($request->user());
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Invitation cancelled.')]);

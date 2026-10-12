@@ -19,9 +19,26 @@ return new class extends Migration
             // Organization the user belongs to (the organizations table is created before users)
             $table->foreignId('organization_id')->nullable()->constrained()->nullOnDelete();
 
-    $table->string('barcode', 13)->nullable()->unique(); // uzupełniany w modelu po utworzeniu (potrzebuje ID)
-             $table->string('name');
+            // Headquarters the user manages (their tables are created before users).
+            // Set when the invitation is accepted or the headquarters is created.
+            $table->foreignId('shop_headquarter_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('warehouse_headquarter_id')->nullable()->constrained()->nullOnDelete();
+
+            // Branch the user manages (set when the branch is created after accepting the invitation)
+            $table->foreignId('shop_branch_id')->nullable()->constrained()->nullOnDelete();
+            $table->foreignId('warehouse_branch_id')->nullable()->constrained()->nullOnDelete();
+
+            $table->string('barcode', 13)->nullable()->unique(); // filled in by the model after creation (needs the ID)
+            $table->string('name');
             $table->string('email')->unique();
+
+            // Profile picture (path on the public disk) and last activity, used by the chat ("active" users)
+            $table->string('avatar_path')->nullable();
+            $table->timestamp('last_seen_at')->nullable();
+
+            // Phone number in E.164 form (+48123456789); unique, filled from the invitation
+            $table->string('phone', 20)->nullable()->unique();
+
             $table->timestamp('email_verified_at')->nullable();
 
             // Proof of consent given at registration (terms of service and GDPR information)

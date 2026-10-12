@@ -9,7 +9,7 @@ use Symfony\Component\HttpFoundation\Response;
 class ErrorPage
 {
     /**
-     * Strona błędu z animacją, która przekierowuje na dashboard roli (lub stronę główną dla gościa).
+     * Error page with an animation that redirects to the role dashboard (or the home page for a guest).
      *
      * @param  string  $component  np. 'errors/forbidden', 'errors/not-found'
      */

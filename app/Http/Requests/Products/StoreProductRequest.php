@@ -25,7 +25,7 @@ class StoreProductRequest extends FormRequest
                 'unique:products,barcode',
                 fn ($attribute, $value, $fail) => Barcode::isValidEan13((string) $value)
                     ?: $fail('Niepoprawna cyfra kontrolna EAN-13.'),
-                // prefiksy użytkowników, organizacji i siedzib są zarezerwowane dla systemu
+                // user, organization and headquarters prefixes are reserved for the system
                 fn ($attribute, $value, $fail) => ! Barcode::usesEntityPrefix((string) $value)
                     ?: $fail('Ten prefiks kodu jest zarezerwowany dla kart i placówek systemu.'),
             ],

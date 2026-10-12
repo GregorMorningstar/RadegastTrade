@@ -7,6 +7,7 @@ import {
     ContentHeader,
     SmallBox,
 } from '@/components/adminlte/blocks';
+import UserBarcodeCard from '@/components/user-barcode-card';
 
 type Props = {
     organization: {
@@ -133,6 +134,7 @@ export default function OrganizationOwnerDashboard({
                         </div>
                     </Card>
                 </div>
+                <UserBarcodeCard className="mt-4 max-w-md" />
             </Content>
         </>
     );

@@ -79,7 +79,7 @@ class FortifyServiceProvider extends ServiceProvider
             'status' => $request->session()->get('status'),
         ]));
 
-        // Rejestracja jest możliwa tylko z zaproszenia (do organizacji lub do zespołu)
+        // Registration is possible only with an invitation (to an organization or to a team)
         Fortify::registerView(function (Request $request) {
             $teamInvitation = $this->teamInvitation($request);
             $organizationInvitation = $this->organizationInvitation($request);
@@ -123,9 +123,9 @@ class FortifyServiceProvider extends ServiceProvider
      * @return array{code: string, teamName: string}|null
      */
     /**
-     * Aktywne zaproszenie do organizacji z linku (query organization_invitation).
+     * Active organization invitation from the link (query organization_invitation).
      *
-     * @return array{code: string, email: string, organizationName: string|null, resendUrl: string}|null
+     * @return array{code: string, email: string, phone: string|null, organizationName: string|null, resendUrl: string}|null
      */
     private function organizationInvitation(Request $request): ?array
     {
@@ -144,6 +144,7 @@ class FortifyServiceProvider extends ServiceProvider
         return [
             'code' => $invitation->code,
             'email' => $invitation->email,
+            'phone' => $invitation->phone,
             'organizationName' => $invitation->organization?->name,
             'resendUrl' => route('organization-invitations.resend', $invitation),
         ];

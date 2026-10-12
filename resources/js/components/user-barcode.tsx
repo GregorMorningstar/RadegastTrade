@@ -2,7 +2,7 @@ import { usePage } from '@inertiajs/react';
 import Barcode from 'react-barcode';
 
 /** Kod EAN-13 zalogowanego użytkownika (karta pracownika), do wyświetlania w nagłówku. */
-export default function UserBarcode({ className }: { className?: string }) {
+export default function UserBarcode({ className, width = 1 }: { className?: string; width?: number }) {
     const barcode = usePage().props.auth?.user?.barcode;
 
     if (!barcode) {
@@ -14,8 +14,8 @@ export default function UserBarcode({ className }: { className?: string }) {
             <Barcode
                 value={barcode}
                 format="EAN13"
-                width={1}
-                height={26}
+                width={width}
+                height={34}
                 fontSize={11}
                 margin={0}
                 background="transparent"

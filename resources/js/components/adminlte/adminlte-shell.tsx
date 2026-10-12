@@ -1,4 +1,4 @@
-import { Link, usePage } from "@inertiajs/react";
+import { Link, router, usePage } from "@inertiajs/react";
 import {
     Building2,
     ChevronRight,
@@ -6,8 +6,10 @@ import {
     LayoutGrid,
     LogOut,
     Menu,
+    MessageCircle,
     Network,
     Store,
+    Users,
     UserCircle,
     Warehouse,
     X,
@@ -15,6 +17,9 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
 import type { PropsWithChildren } from "react";
+import ChatWidget from "@/components/chat/chat-widget";
+import UserAvatar from "@/components/user-avatar";
+import { chatWindow, useChatWindowOpen } from "@/lib/chat-window";
 import UserBarcode from "@/components/user-barcode";
 import { cn } from "@/lib/utils";
 import { logout } from "@/routes";
@@ -28,6 +33,8 @@ type MenuItem = {
     section?: string;
     /** Podmenu rozwijane pod pozycją */
     children?: { title: string; href: string }[];
+    /** Zamiast przejścia na stronę otwiera okienko czatu nad aplikacją */
+    action?: "chat";
 };
 
 type Props = PropsWithChildren<{
@@ -63,6 +70,8 @@ export default function AdminLteShell({
     const base = baseProp ?? props.rolePanel?.base ?? "/";
     const brand = brandProp ?? props.rolePanel?.name ?? "";
     const userName = props.auth?.user?.name ?? "";
+    const userAvatar = props.auth?.user?.avatar_url;
+    const chatOpen = useChatWindowOpen();
 
     useEffect(() => setCollapsed(readCollapsed()), []);
 
@@ -81,6 +90,9 @@ export default function AdminLteShell({
     // Hurtownie i sklepy z podmenu dostępne tylko w panelu administratora
     const isAdminPanel = base === "/platform/admin";
     const isOrganizationPanel = base === "/platform/organization";
+    const isBranchLeaderPanel = base === "/shop/leader" || base === "/warehouse/leader";
+    const isBranchWorkerPanel = base === "/shop/worker" || base === "/warehouse/worker";
+    const isBranchManagerPanel = base === "/shop/owner" || base === "/warehouse/owner";
 
     const items: MenuItem[] = [
         {
@@ -140,8 +152,52 @@ export default function AdminLteShell({
                       href: `${base}/warehouses`,
                       icon: Warehouse,
                   },
+                  { title: "Zespół", href: `${base}/team`, icon: Users },
               ]
             : []),
+        // Panel kierownika placówki: pracownicy i zaproszenia
+        ...(isBranchLeaderPanel
+            ? [
+                  {
+                      section: "Struktura",
+                      title: "Pracownicy",
+                      href: `${base}/workers`,
+                      icon: Users,
+                  },
+                  { title: "Zespół", href: `${base}/team`, icon: Users },
+              ]
+            : []),
+        // Panel pracownika placówki: zespół (kierownik i współpracownicy)
+        ...(isBranchWorkerPanel
+            ? [
+                  {
+                      section: "Struktura",
+                      title: "Zespół",
+                      href: `${base}/team`,
+                      icon: Users,
+                  },
+              ]
+            : []),
+        // Panel kierownika siedziby sklepu lub hurtowni: placówki i zaproszenia ich kierowników
+        ...(isBranchManagerPanel
+            ? [
+                  {
+                      section: "Struktura",
+                      title: "Placówki",
+                      href: `${base}/branches`,
+                      icon: Store,
+                  },
+                  { title: "Zespół", href: `${base}/team`, icon: Users },
+              ]
+            : []),
+        // Czat z osobami z organizacji (dla każdej roli)
+        {
+            section: "Komunikacja",
+            title: "Czat",
+            href: "/chat",
+            icon: MessageCircle,
+            action: "chat" as const,
+        },
     ];
 
     // Grupy podmenu: domyślnie otwarta ta, w której jest aktualna strona
@@ -202,19 +258,27 @@ export default function AdminLteShell({
                     </span>
                 </Link>
 
-                {/* Panel użytkownika */}
-                <div
-                    className={cn(
-                        "flex items-center gap-3 border-b border-[#4b545c] px-4 py-3",
-                        collapsed && "lg:justify-center lg:gap-0 lg:px-0",
-                    )}
-                >
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#6c757d] text-sm font-semibold text-white">
-                        {userName.charAt(0).toUpperCase()}
-                    </span>
-                    <span className={cn(label, "text-sm text-[#c2c7d0]")}>
-                        {userName}
-                    </span>
+                {/* Panel użytkownika: imię i nazwisko, a pod nim kod kreskowy */}
+                <div className="border-b border-[#4b545c] px-4 py-3">
+                    <div
+                        className={cn(
+                            "flex items-center gap-3",
+                            collapsed && "lg:justify-center lg:gap-0",
+                        )}
+                    >
+                        <UserAvatar src={userAvatar} name={userName} size={32} />
+                        <span className={cn(label, "text-sm text-[#c2c7d0]")}>
+                            {userName}
+                        </span>
+                    </div>
+                    <div
+                        className={cn(
+                            "mt-3 flex justify-center rounded bg-white px-2 py-1.5",
+                            collapsed && "lg:-mx-2 lg:px-0.5",
+                        )}
+                    >
+                        <UserBarcode width={collapsed ? 0.5 : 1.3} />
+                    </div>
                 </div>
 
                 <nav className="flex-1 overflow-y-auto py-2">
@@ -298,6 +362,29 @@ export default function AdminLteShell({
                                         </div>
                                     </div>
                                 </div>
+                            ) : item.action === "chat" ? (
+                                <button
+                                    key={item.href}
+                                    type="button"
+                                    title={item.title}
+                                    onClick={() => {
+                                        setMobileOpen(false);
+
+                                        if (!props.auth?.user?.organization_id) {
+                                            // konto bez organizacji: strona z informacją, okienka nie ma
+                                            router.visit(item.href);
+                                        } else if (!url.startsWith("/chat")) {
+                                            chatWindow.toggle();
+                                        }
+                                    }}
+                                    className={cn(
+                                        itemClass(chatOpen || url.startsWith("/chat")),
+                                        "w-full text-left",
+                                    )}
+                                >
+                                    <item.icon className="size-4 shrink-0" />
+                                    <span className={label}>{item.title}</span>
+                                </button>
                             ) : (
                                 <Link
                                     key={item.href}
@@ -388,13 +475,15 @@ export default function AdminLteShell({
                             Panel
                         </Link>
                     </nav>
-                    <span className="ml-auto text-sm text-[#6c757d]">
+                    <span className="ml-auto flex items-center gap-2 text-sm text-[#6c757d]">
+                        <UserAvatar src={userAvatar} name={userName} size={28} />
                         {userName}
                     </span>
-                    <UserBarcode className="shrink-0" />
                 </header>
 
                 <main className="flex-1">{children}</main>
+
+                <ChatWidget />
 
                 <footer className="flex flex-wrap justify-between gap-2 border-t border-[#dee2e6] bg-white px-4 py-3 text-sm text-[#869099]">
                     <span>

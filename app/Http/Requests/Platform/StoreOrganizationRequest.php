@@ -2,7 +2,7 @@
 
 namespace App\Http\Requests\Platform;
 
-use App\Services\NipService;
+use App\Services\Contracts\NipServiceInterface;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -14,13 +14,13 @@ class StoreOrganizationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            // nazwę organizacji podaje zapraszana osoba; e-mail pochodzi z zaproszenia (kontroler go ustawia)
+            // the organization name is provided by the invited person; the email comes from the invitation (the controller sets it)
             'name' => ['required', 'string', 'max:255'],
-            // NIP musi być unikalny w skali organizacji (placówki mogą go współdzielić z organizacją)
+            // NIP must be unique across organizations (branches may share it with their organization)
             'NIP' => [
                 'nullable',
                 'digits:10',
-                fn ($attribute, $value, $fail) => app(NipService::class)->validateNip((string) $value)
+                fn ($attribute, $value, $fail) => app(NipServiceInterface::class)->validateNip((string) $value)
                     ?: $fail('Nieprawidłowy numer NIP (błędna suma kontrolna).'),
                 'unique:organizations,NIP',
             ],
@@ -36,7 +36,7 @@ class StoreOrganizationRequest extends FormRequest
     }
 
     /**
-     * Puste pola formularza zapisujemy jako NULL (unikalne NIP/REGON nie mogą być pustym tekstem).
+     * Empty form fields are stored as NULL (unique NIP/REGON must not be an empty string).
      */
     protected function prepareForValidation(): void
     {

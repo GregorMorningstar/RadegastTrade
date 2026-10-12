@@ -1,5 +1,5 @@
 import { Form, Head } from '@inertiajs/react';
-import { KeyRound, Lock, Mail, ShieldCheck, User } from 'lucide-react';
+import { KeyRound, Lock, Mail, Phone, ShieldCheck, User } from 'lucide-react';
 import type { ReactNode } from 'react';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
@@ -18,6 +18,7 @@ import type { TeamInvitationContext } from '@/types';
 type OrganizationInvitationContext = {
     code: string;
     email: string;
+    phone: string | null;
     organizationName: string | null;
     resendUrl: string;
 };
@@ -162,6 +163,25 @@ export default function Register({
                                 className={`${inputClass} bg-muted/50`}
                             />
                         </Field>
+
+                        {organizationInvitation?.phone && (
+                            <Field
+                                id="phone"
+                                label="Telefon"
+                                icon={<Phone className="size-4" />}
+                                error={errors.phone}
+                            >
+                                <Input
+                                    id="phone"
+                                    type="tel"
+                                    tabIndex={-1}
+                                    autoComplete="tel"
+                                    defaultValue={organizationInvitation.phone}
+                                    readOnly
+                                    className={`${inputClass} bg-muted/50`}
+                                />
+                            </Field>
+                        )}
 
                         <div className="grid gap-5 sm:grid-cols-2">
                             <Field

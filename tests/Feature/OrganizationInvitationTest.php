@@ -712,17 +712,17 @@ test('panel właściciela organizacji leży w grupie platform i ma widoki sklep�
     $owner = User::factory()->create(['role' => UserRole::ORGANIZATION_OWNER, 'organization_id' => $org->id]);
 
     $this->actingAs($owner)
-        ->get(route('platform.organization.shops'))
+        ->get(route('platform.organization.headquarters.index', 'shops'))
         ->assertOk()
         ->assertInertia(fn ($page) => $page->component('platform/organization/shops/index'));
 
-    $this->get(route('platform.organization.warehouses'))
+    $this->get(route('platform.organization.headquarters.index', 'warehouses'))
         ->assertOk()
         ->assertInertia(fn ($page) => $page->component('platform/organization/warehouses/index'));
 });
 
-test('widoki sklepów i hurtowni organizacji są zamknięte dla innych ról', function (string $route) {
+test('widoki sklepów i hurtowni organizacji są zamknięte dla innych ról', function (string $type) {
     $this->actingAs(User::factory()->create(['role' => UserRole::Manager]))
-        ->get(route($route))
+        ->get(route('platform.organization.headquarters.index', $type))
         ->assertForbidden();
-})->with(['platform.organization.shops', 'platform.organization.warehouses']);
+})->with(['shops', 'warehouses']);

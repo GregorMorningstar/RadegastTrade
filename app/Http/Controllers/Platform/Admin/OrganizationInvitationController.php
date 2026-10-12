@@ -15,7 +15,7 @@ use Inertia\Inertia;
 class OrganizationInvitationController extends Controller
 {
     /**
-     * Zaproszenie do założenia NOWEJ organizacji: nazwę i dane podaje zapraszana osoba po przyjęciu.
+     * Invitation to create a NEW organization: the invited person provides the name and details after accepting.
      */
     public function storeNew(StoreOrganizationInvitationRequest $request): RedirectResponse
     {
@@ -23,7 +23,7 @@ class OrganizationInvitationController extends Controller
     }
 
     /**
-     * Zaproszenie kolejnego właściciela do ISTNIEJĄCEJ organizacji.
+     * Invitation of another owner to an EXISTING organization.
      */
     public function store(StoreOrganizationInvitationRequest $request, Organization $organization): RedirectResponse
     {
@@ -31,11 +31,11 @@ class OrganizationInvitationController extends Controller
     }
 
     /**
-     * Anuluje zaproszenie.
+     * Cancels the invitation.
      */
     public function destroy(Request $request, OrganizationInvitation $invitation): RedirectResponse
     {
-        // Zaproszenie zostaje w bazie jako wycofane: widać kiedy i przez kogo
+        // The invitation stays in the database as revoked: it shows when and by whom
         $invitation->revoke($request->user());
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Zaproszenie zostało anulowane.']);
@@ -44,8 +44,8 @@ class OrganizationInvitationController extends Controller
     }
 
     /**
-     * Wysyła mailem link i 6-cyfrowy klucz. Nowe zaproszenie wycofuje poprzednie, nieprzyjęte,
-     * na ten sam adres i tę samą organizację.
+     * Emails the link and a 6-digit key. A new invitation revokes previous, unaccepted ones
+     * for the same address and the same organization.
      */
     private function send(StoreOrganizationInvitationRequest $request, ?Organization $organization): RedirectResponse
     {

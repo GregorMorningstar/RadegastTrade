@@ -17,17 +17,17 @@ use Inertia\Response;
 class AcceptOrganizationInvitationController extends Controller
 {
     /**
-     * Strona przyjęcia zaproszenia: pole na 6-cyfrowy klucz z maila.
+     * Invitation acceptance page: a field for the 6-digit key from the email.
      *
-     * Jak w zaproszeniach do zespołów, konto zakłada się zwykłą rejestracją (na adres, na który
-     * wysłano zaproszenie), a zaproszenie przyjmuje się po zalogowaniu. Gość z linku trafia
-     * na rejestrację (z polem na klucz) albo logowanie.
+     * As with team invitations, the account is created through regular registration (for the address
+     * the invitation was sent to), and the invitation is accepted after logging in. A guest following the link
+     * lands on registration (with a key field) or on login.
      */
     public function show(Request $request, OrganizationInvitation $invitation): Response|RedirectResponse
     {
         $user = $request->user();
 
-        // Gość z aktywnym zaproszeniem: rejestracja (brak konta) lub logowanie (konto istnieje)
+        // Guest with an active invitation: registration (no account) or login (account exists)
         if (! $user && $invitation->isPending()) {
             if (User::where('email', $invitation->email)->exists()) {
                 $request->session()->put('url.intended', $request->fullUrl());
@@ -35,7 +35,7 @@ class AcceptOrganizationInvitationController extends Controller
                 return redirect()->route('login');
             }
 
-            // Rejestracja z kluczem od razu: konto dostaje rolę z zaproszenia
+            // Registration with the key right away: the account gets the role from the invitation
             return redirect()->route('register', ['organization_invitation' => $invitation->code]);
         }
 
@@ -56,8 +56,8 @@ class AcceptOrganizationInvitationController extends Controller
     }
 
     /**
-     * Wysyła nowy klucz na adres z zaproszenia (adres nie pochodzi od użytkownika, więc nie da się
-     * wysłać wiadomości w inne miejsce). Nowy klucz unieważnia poprzedni i odblokowuje próby.
+     * Sends a new key to the invitation's address (the address does not come from the user, so it is not possible
+     * to send the message elsewhere). A new key invalidates the previous one and unlocks attempts.
      */
     public function resend(Request $request, OrganizationInvitation $invitation): RedirectResponse
     {
@@ -67,7 +67,7 @@ class AcceptOrganizationInvitationController extends Controller
             ]);
         }
 
-        // Odstęp między kolejnymi kluczami (updated_at zmienia się przy każdym nowym kluczu)
+        // Interval between consecutive keys (updated_at changes with every new key)
         if ($invitation->updated_at->gt(now()->subSeconds(60))) {
             throw ValidationException::withMessages([
                 'resend' => 'Nowy klucz można wysłać raz na minutę. Spróbuj za chwilę.',
@@ -88,7 +88,7 @@ class AcceptOrganizationInvitationController extends Controller
     }
 
     /**
-     * Przyjmuje zaproszenie po sprawdzeniu adresu e-mail konta i klucza z maila.
+     * Accepts the invitation after checking the account's email address and the key from the email.
      */
     public function store(Request $request, OrganizationInvitation $invitation): RedirectResponse
     {
@@ -108,21 +108,21 @@ class AcceptOrganizationInvitationController extends Controller
             ]);
         }
 
-        // Rola organizacji nie może nadpisać roli administracyjnej ani roli w sklepie/hurtowni
-        if (! in_array($user->role, [UserRole::Employee, UserRole::ORGANIZATION_OWNER], true)) {
+        // The invitation role cannot overwrite an administrative role or any other role (the default account is Employee)
+        if (! in_array($user->role, [UserRole::Employee, $invitation->role], true)) {
             throw ValidationException::withMessages([
-                'code' => 'Twoje konto nie może zostać właścicielem organizacji.',
+                'code' => 'Twoje konto nie może przyjąć tej roli.',
             ]);
         }
 
-        // Użytkownik należy do jednej organizacji: nie przepisujemy go do innej ani do nowej
+        // A user belongs to one organization: we do not move them to another or to a new one
         if ($user->organization_id && $user->organization_id !== $invitation->organization_id) {
             throw ValidationException::withMessages([
                 'code' => 'To konto jest już przypisane do innej organizacji.',
             ]);
         }
 
-        // Błędny klucz zwiększa licznik prób, a po limicie zaproszenie się blokuje
+        // A wrong key increments the attempt counter, and the invitation locks after the limit
         if (! $invitation->checkCode($request->string('code')->toString())) {
             $invitation->increment('attempts');
 
@@ -133,15 +133,39 @@ class AcceptOrganizationInvitationController extends Controller
             ]);
         }
 
+        // A manager belongs to one headquarters: we do not move them to another
+        $otherHeadquarter = ($user->shop_headquarter_id && $user->shop_headquarter_id !== $invitation->shop_headquarter_id)
+            || ($user->warehouse_headquarter_id && $user->warehouse_headquarter_id !== $invitation->warehouse_headquarter_id);
+
+        // A leader and a worker belong to one branch: we do not move them to another
+        $otherHeadquarter = $otherHeadquarter
+            || ($user->shop_branch_id && $invitation->shop_branch_id && $user->shop_branch_id !== $invitation->shop_branch_id)
+            || ($user->warehouse_branch_id && $invitation->warehouse_branch_id && $user->warehouse_branch_id !== $invitation->warehouse_branch_id);
+
+        if ($otherHeadquarter) {
+            throw ValidationException::withMessages([
+                'code' => 'To konto jest już przypisane do innej siedziby.',
+            ]);
+        }
+
         DB::transaction(function () use ($user, $invitation) {
+            // the number from the invitation goes to an account that has none of its own (and nobody else has it)
+            if ($invitation->phone && ! $user->phone && ! User::where('phone', $invitation->phone)->exists()) {
+                $user->forceFill(['phone' => $invitation->phone]);
+            }
+
             $user->forceFill([
                 'role' => $invitation->role,
                 'organization_id' => $invitation->organization_id,
+                'shop_headquarter_id' => $invitation->shop_headquarter_id,
+                'warehouse_headquarter_id' => $invitation->warehouse_headquarter_id,
+                'shop_branch_id' => $invitation->shop_branch_id,
+                'warehouse_branch_id' => $invitation->warehouse_branch_id,
             ])->save();
 
             $invitation->markAccepted();
 
-            // Klucz z maila potwierdza dostęp do skrzynki, więc adres uznajemy za zweryfikowany
+            // The key from the email proves access to the mailbox, so we treat the address as verified
             if (! $user->hasVerifiedEmail()) {
                 $user->markEmailAsVerified();
             }

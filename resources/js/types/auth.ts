@@ -3,6 +3,10 @@ export type User = {
     name: string;
     email: string;
     avatar?: string;
+    /** Zdjęcie profilowe albo domyślny awatar */
+    avatar_url?: string;
+    avatar_path?: string | null;
+    organization_id?: number | null;
     barcode?: string | null;
     email_verified_at: string | null;
     two_factor_enabled?: boolean;

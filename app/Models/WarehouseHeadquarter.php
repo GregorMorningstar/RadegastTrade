@@ -7,6 +7,7 @@ use App\Models\Concerns\HasOrganizationNip;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'organization_id',
@@ -47,5 +48,23 @@ class WarehouseHeadquarter extends Model
     public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
+    }
+
+    /**
+     * Managers assigned to the headquarters (after accepting the invitation).
+     *
+     * @return HasMany<User, $this>
+     */
+    public function users(): HasMany
+    {
+        return $this->hasMany(User::class);
+    }
+
+    /**
+     * @return HasMany<OrganizationInvitation, $this>
+     */
+    public function invitations(): HasMany
+    {
+        return $this->hasMany(OrganizationInvitation::class);
     }
 }

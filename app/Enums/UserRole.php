@@ -4,27 +4,39 @@ namespace App\Enums;
 
 enum UserRole: string
 {
-    // Uniwersalne role (np. dla platformy / ogólnego dostępu)
+    // Universal roles (e.g. for the platform / general access)
     case Admin    = 'admin';
     case Manager  = 'manager';
     case Employee = 'employee';
 
-    // Właściciel organizacji (nadrzędnej jednostki: zaprasza siedziby hurtowni i sklepów)
+    // Organization owner (the parent unit: invites warehouse and shop headquarters)
     case ORGANIZATION_OWNER = 'organization_owner';
 
-    // Hurtownia / magazyn
+    // Warehouse
     case WAREHOUSE_OWNER   = 'warehouse_owner';
     case WAREHOUSE_LEADER  = 'warehouse_leader';
     case WAREHOUSE_WORKER  = 'warehouse_worker';
 
-    // Sklep
+    // Shop
     case SHOP_OWNER        = 'shop_owner';
     case SHOP_LEADER       = 'shop_leader';
     case SHOP_WORKER       = 'shop_worker';
 
     /**
-     * Grupa roli używana w strukturze folderów, kontrolerów i adresów: platform, warehouse lub shop.
+     * Role group used in the folder, controller and URL structure: platform, warehouse or shop.
      */
+    /**
+     * Role views folder in resources/js/pages (everything lives under platform/).
+     */
+    public function pageGroup(): string
+    {
+        return match (true) {
+            $this->isWarehouse() => 'platform/warehouses',
+            $this->isShop() => 'platform/shop',
+            default => 'platform',
+        };
+    }
+
     public function group(): string
     {
         return match (true) {
@@ -35,11 +47,11 @@ enum UserRole: string
     }
 
     /**
-     * Nazwa roli bez przedrostka grupy, np. owner, leader, worker, manager.
+     * Role name without the group prefix, e.g. owner, leader, worker, manager.
      */
     public function slug(): string
     {
-        // wartość roli w bazie to organization_owner, ale w adresach i trasach używamy samego "organization"
+        // the role value in the database is organization_owner, but URLs and routes use just "organization"
         if ($this === self::ORGANIZATION_OWNER) {
             return 'organization';
         }
@@ -50,7 +62,7 @@ enum UserRole: string
     }
 
     /**
-     * Adres bazowy panelu roli, np. /shop/owner.
+     * Base URL of the role panel, e.g. /shop/owner.
      */
     public function basePath(): string
     {
@@ -58,7 +70,7 @@ enum UserRole: string
     }
 
     /**
-     * Krótka nazwa panelu wyświetlana w menu bocznym.
+     * Short panel name shown in the side menu.
      */
     public function panelName(): string
     {
@@ -77,7 +89,7 @@ enum UserRole: string
     }
 
     /**
-     * Nazwa trasy dedykowanego dashboardu roli, np. shop.owner.dashboard.
+     * Route name of the role's dedicated dashboard, e.g. shop.owner.dashboard.
      */
     public function dashboardRoute(): string
     {
@@ -85,7 +97,7 @@ enum UserRole: string
     }
 
     /**
-     * Czy rola należy do hurtowni.
+     * Whether the role belongs to a warehouse.
      */
     public function isWarehouse(): bool
     {
@@ -97,7 +109,7 @@ enum UserRole: string
     }
 
     /**
-     * Czy rola należy do sklepu.
+     * Whether the role belongs to a shop.
      */
     public function isShop(): bool
     {
@@ -109,7 +121,7 @@ enum UserRole: string
     }
 
     /**
-     * Czy rola może wysyłać zaproszenia w ramach teamu (dla dzieci / nowych użytkowników).
+     * Whether the role can send invitations within a team (for children / new users).
      */
     public function canSendInvites(): bool
     {
@@ -122,7 +134,7 @@ enum UserRole: string
     }
 
     /**
-     * Czy rola może zarządzać członkami teamu (zmiana ról, usuwanie z teamu).
+     * Whether the role can manage team members (change roles, remove from the team).
      */
     public function canManageTeam(): bool
     {
@@ -133,7 +145,7 @@ enum UserRole: string
     }
 
     /**
-     * Przyjazna nazwa roli.
+     * Human-friendly role name.
      */
     public function label(): string
     {
@@ -155,7 +167,7 @@ enum UserRole: string
     }
 
     /**
-     * Lista wszystkich wartości jako tablica stringów (przydatne w migracjach / walidacji).
+     * List of all values as a string array (useful in migrations / validation).
      */
     public static function getValues(): array
     {

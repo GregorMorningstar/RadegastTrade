@@ -2,23 +2,24 @@
 
 namespace App\Services;
 
+use App\Services\Contracts\NipServiceInterface;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 /**
- * Wyszukiwanie danych firmy po NIP w Wykazie podatników VAT Ministerstwa Finansów (biała lista).
+ * Company data lookup by NIP in the Ministry of Finance VAT taxpayer register (the white list).
  *
  * Pochodzi z NipService z repozytorium workforce-production-manager. Zmiany:
- * - weryfikacja SSL jest wyłączana tylko w środowisku lokalnym (nie na produkcji),
- * - błędy nie są cache'owane (chwilowa awaria API nie blokuje NIP-u na 24 godziny),
- * - zwraca też REGON oraz rozdziela numer budynku i lokalu.
+ * - SSL verification is disabled only in the local environment (not in production),
+ * - errors are not cached (a temporary API outage does not block a NIP for 24 hours),
+ * - also returns REGON and splits the building and apartment numbers.
  */
-class NipService
+class NipService implements NipServiceInterface
 {
     protected string $base = 'https://wl-api.mf.gov.pl/api/search/nip';
 
     /**
-     * Czy NIP ma 10 cyfr i poprawną sumę kontrolną.
+     * Whether the NIP has 10 digits and a valid checksum.
      */
     public function validateNip(string $nip): bool
     {
@@ -59,7 +60,7 @@ class NipService
 
         $result = $this->request($nipClean);
 
-        // Cache'ujemy tylko udane odpowiedzi
+        // Only successful responses are cached
         if ($result['ok']) {
             Cache::put($cacheKey, $result, now()->addHours(24));
         }
@@ -77,7 +78,7 @@ class NipService
         try {
             $response = Http::acceptJson()
                 ->timeout(10)
-                // lokalnie (np. Laragon) często brakuje pakietu certyfikatów; na produkcji weryfikujemy
+                // locally (e.g. Laragon) the certificate bundle is often missing; in production we verify
                 ->withOptions(['verify' => ! app()->environment('local')])
                 ->get($url);
         } catch (\Throwable) {
@@ -113,7 +114,7 @@ class NipService
     }
 
     /**
-     * Rozdziela adres w formacie MF: "ULICA 3/5, 38-200 MIEJSCOWOŚĆ".
+     * Splits an address in the MF format: "STREET 3/5, 38-200 CITY".
      *
      * @return array{0: ?string, 1: ?string, 2: ?string, 3: ?string, 4: ?string}
      */
@@ -131,7 +132,7 @@ class NipService
         $zip = null;
         $city = null;
 
-        // "ULICA 3/5" albo "ULICA 3 LOK. 5": numer budynku (opcjonalnie z literą) i numer lokalu
+        // "STREET 3/5" or "STREET 3 LOK. 5": building number (optionally with a letter) and apartment number
         if (preg_match('/^(.*?)\s+(\d+[A-Za-z]?)(?:\s*\/\s*|\s+(?:LOK\.?|M\.?)\s*)(\S+)$/iu', $line, $m)) {
             [$street, $building, $apartment] = [trim($m[1]), $m[2], $m[3]];
         } elseif (preg_match('/^(.*?)\s+(\d+[A-Za-z]?)$/u', $line, $m)) {

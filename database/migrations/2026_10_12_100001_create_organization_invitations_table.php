@@ -18,6 +18,14 @@ return new class extends Migration
             // organization: the invited person fills in its data after accepting the invitation.
             $table->foreignId('organization_id')->nullable()->constrained()->cascadeOnDelete();
 
+            // Headquarters / branch the invitation concerns (all NULL for organization owners).
+            // headquarter set, branch NULL: invitation of a branch manager (the branch is created after accepting).
+            // Filled with the new branch id once it has been created.
+            $table->foreignId('shop_headquarter_id')->nullable()->constrained()->cascadeOnDelete();
+            $table->foreignId('warehouse_headquarter_id')->nullable()->constrained()->cascadeOnDelete();
+            $table->foreignId('shop_branch_id')->nullable()->constrained()->cascadeOnDelete();
+            $table->foreignId('warehouse_branch_id')->nullable()->constrained()->cascadeOnDelete();
+
             // Random token used in the link sent by e-mail
             $table->string('code', 64)->unique();
 
@@ -29,6 +37,9 @@ return new class extends Migration
 
             // Address the invitation was sent to; only a user with this e-mail can accept it
             $table->string('email');
+
+            // Phone number of the invited person in E.164 form; copied to the user when the account is created
+            $table->string('phone', 20)->nullable();
 
             // Role granted after acceptance (UserRole value)
             $table->string('role');

@@ -5,10 +5,10 @@ namespace App\Models\Concerns;
 use App\Support\Barcode;
 
 /**
- * Nadaje rekordowi kod EAN-13 po utworzeniu (ID jest znane dopiero po zapisie).
+ * Assigns the record an EAN-13 code after creation (the ID is known only after saving).
  *
- * Model musi zdefiniować metodę barcodeKey() zwracającą klucz z config/barcode.php.
- * Kolumna "barcode" musi być nullable.
+ * The model must define a barcodeKey() method returning a key from config/barcode.php.
+ * The "barcode" column must be nullable.
  */
 trait GeneratesBarcode
 {
@@ -25,7 +25,7 @@ trait GeneratesBarcode
     }
 
     /**
-     * Prefiks (z .env) + ID dopełnione zerami + cyfra kontrolna.
+     * Prefix (from .env) + zero-padded ID + check digit.
      */
     public function generateBarcode(): string
     {

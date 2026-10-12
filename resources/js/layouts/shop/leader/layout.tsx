@@ -1,10 +1,6 @@
 import type { PropsWithChildren } from 'react';
-import RoleShell from '@/components/role/role-shell';
+import AdminLteShell from '@/components/adminlte/adminlte-shell';
 
 export default function ShopLeaderLayout({ children }: PropsWithChildren) {
-    return (
-        <RoleShell base="/shop/leader" brand="Sklep - leader">
-            {children}
-        </RoleShell>
-    );
+    return <AdminLteShell base="/shop/leader">{children}</AdminLteShell>;
 }

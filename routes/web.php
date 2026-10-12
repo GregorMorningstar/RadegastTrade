@@ -2,6 +2,12 @@
 
 use App\Http\Controllers\AcceptOrganizationInvitationController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\BranchSetupController;
+use App\Http\Controllers\BranchWorkerController;
+use App\Http\Controllers\ChatController;
+use App\Http\Controllers\HeadquarterBranchController;
+use App\Http\Controllers\HeadquarterSetupController;
+use App\Http\Controllers\TeamMembersController;
 use App\Http\Controllers\Platform;
 use App\Http\Controllers\Shop;
 use App\Http\Controllers\Teams\TeamInvitationController;
@@ -11,7 +17,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
 
-// Dokumenty prawne (dostępne bez logowania, linkowane z rejestracji)
+// Legal documents (available without logging in, linked from registration)
 Route::inertia('regulamin', 'legal/terms')->name('legal.terms');
 Route::inertia('rodo', 'legal/privacy')->name('legal.privacy');
 
@@ -21,7 +27,7 @@ Route::prefix('{current_team}')
         Route::get('dashboard', DashboardController::class)->name('dashboard');
     });
 
-// Platforma: admin, manager, employee, właściciel organizacji
+// Platform: admin, manager, employee, organization owner
 Route::prefix('platform')
     ->name('platform.')
     ->middleware(['auth', 'verified'])
@@ -62,19 +68,32 @@ Route::prefix('platform')
             Route::get('dashboard', [Platform\EmployeeController::class, 'dashboard'])->name('dashboard');
         });
 
-        // Właściciel organizacji (zapraszany przez administratora)
+        // Organization owner (invited by the administrator)
         Route::prefix('organization')->name('organization.')->middleware('role:organization_owner')->group(function () {
             Route::get('/', [Platform\OrganizationOwnerController::class, 'index'])->name('index');
             Route::get('dashboard', [Platform\OrganizationOwnerController::class, 'dashboard'])->name('dashboard');
             Route::get('nip-lookup', [Platform\OrganizationOwnerController::class, 'nipLookup'])
                 ->middleware('throttle:20,1')
                 ->name('nip-lookup');
+            Route::get('team', TeamMembersController::class)->name('team');
             Route::get('setup', [Platform\OrganizationOwnerController::class, 'setup'])->name('setup');
             Route::post('setup', [Platform\OrganizationOwnerController::class, 'storeSetup'])->name('setup.store');
 
-            // Na razie tylko widoki, bez backendu
-            Route::inertia('shops', 'platform/organization/shops/index')->name('shops');
-            Route::inertia('warehouses', 'platform/organization/warehouses/index')->name('warehouses');
+            // Shop (shops) and warehouse (warehouses) headquarters and the invitations of their managers
+            Route::get('{type}', [Platform\Organization\HeadquarterController::class, 'index'])
+                ->whereIn('type', ['shops', 'warehouses'])
+                ->name('headquarters.index');
+            Route::post('{type}/invitations', [Platform\Organization\HeadquarterController::class, 'inviteNew'])
+                ->whereIn('type', ['shops', 'warehouses'])
+                ->middleware('throttle:20,1')
+                ->name('headquarters.invitations.store-new');
+            Route::post('{type}/{headquarter}/invitations', [Platform\Organization\HeadquarterController::class, 'invite'])
+                ->whereIn('type', ['shops', 'warehouses'])
+                ->whereNumber('headquarter')
+                ->middleware('throttle:20,1')
+                ->name('headquarters.invitations.store');
+            Route::delete('invitations/{invitation:id}', [Platform\Organization\HeadquarterController::class, 'cancelInvitation'])
+                ->name('invitations.destroy');
         });
     });
 
@@ -84,16 +103,37 @@ Route::prefix('warehouse')
     ->middleware(['auth', 'verified'])
     ->group(function () {
         Route::prefix('owner')->name('owner.')->middleware('role:warehouse_owner')->group(function () {
+            Route::get('setup', [HeadquarterSetupController::class, 'show'])->name('setup');
+            Route::post('setup', [HeadquarterSetupController::class, 'store'])->name('setup.store');
+            Route::get('nip-lookup', [HeadquarterSetupController::class, 'nipLookup'])->middleware('throttle:20,1')->name('nip-lookup');
+            Route::get('team', TeamMembersController::class)->name('team');
+            Route::get('branches', [HeadquarterBranchController::class, 'index'])->name('branches.index');
+            Route::post('branches/invitations', [HeadquarterBranchController::class, 'invite'])
+                ->middleware('throttle:20,1')
+                ->name('branches.invitations.store');
+            Route::delete('branches/invitations/{invitation:id}', [HeadquarterBranchController::class, 'cancelInvitation'])
+                ->name('branches.invitations.destroy');
             Route::get('/', [Warehouse\OwnerController::class, 'index'])->name('index');
             Route::get('dashboard', [Warehouse\OwnerController::class, 'dashboard'])->name('dashboard');
         });
 
         Route::prefix('leader')->name('leader.')->middleware('role:warehouse_leader')->group(function () {
+            Route::get('team', TeamMembersController::class)->name('team');
+            Route::get('workers', [BranchWorkerController::class, 'index'])->name('workers.index');
+            Route::post('workers/invitations', [BranchWorkerController::class, 'invite'])
+                ->middleware('throttle:20,1')
+                ->name('workers.invitations.store');
+            Route::delete('workers/invitations/{invitation:id}', [BranchWorkerController::class, 'cancelInvitation'])
+                ->name('workers.invitations.destroy');
+            Route::get('setup', [BranchSetupController::class, 'show'])->name('setup');
+            Route::post('setup', [BranchSetupController::class, 'store'])->name('setup.store');
+            Route::get('nip-lookup', [BranchSetupController::class, 'nipLookup'])->middleware('throttle:20,1')->name('nip-lookup');
             Route::get('/', [Warehouse\LeaderController::class, 'index'])->name('index');
             Route::get('dashboard', [Warehouse\LeaderController::class, 'dashboard'])->name('dashboard');
         });
 
         Route::prefix('worker')->name('worker.')->middleware('role:warehouse_worker')->group(function () {
+            Route::get('team', TeamMembersController::class)->name('team');
             Route::get('/', [Warehouse\WorkerController::class, 'index'])->name('index');
             Route::get('dashboard', [Warehouse\WorkerController::class, 'dashboard'])->name('dashboard');
         });
@@ -105,23 +145,44 @@ Route::prefix('shop')
     ->middleware(['auth', 'verified'])
     ->group(function () {
         Route::prefix('owner')->name('owner.')->middleware('role:shop_owner')->group(function () {
+            Route::get('setup', [HeadquarterSetupController::class, 'show'])->name('setup');
+            Route::post('setup', [HeadquarterSetupController::class, 'store'])->name('setup.store');
+            Route::get('nip-lookup', [HeadquarterSetupController::class, 'nipLookup'])->middleware('throttle:20,1')->name('nip-lookup');
+            Route::get('team', TeamMembersController::class)->name('team');
+            Route::get('branches', [HeadquarterBranchController::class, 'index'])->name('branches.index');
+            Route::post('branches/invitations', [HeadquarterBranchController::class, 'invite'])
+                ->middleware('throttle:20,1')
+                ->name('branches.invitations.store');
+            Route::delete('branches/invitations/{invitation:id}', [HeadquarterBranchController::class, 'cancelInvitation'])
+                ->name('branches.invitations.destroy');
             Route::get('/', [Shop\OwnerController::class, 'index'])->name('index');
             Route::get('dashboard', [Shop\OwnerController::class, 'dashboard'])->name('dashboard');
         });
 
         Route::prefix('leader')->name('leader.')->middleware('role:shop_leader')->group(function () {
+            Route::get('team', TeamMembersController::class)->name('team');
+            Route::get('workers', [BranchWorkerController::class, 'index'])->name('workers.index');
+            Route::post('workers/invitations', [BranchWorkerController::class, 'invite'])
+                ->middleware('throttle:20,1')
+                ->name('workers.invitations.store');
+            Route::delete('workers/invitations/{invitation:id}', [BranchWorkerController::class, 'cancelInvitation'])
+                ->name('workers.invitations.destroy');
+            Route::get('setup', [BranchSetupController::class, 'show'])->name('setup');
+            Route::post('setup', [BranchSetupController::class, 'store'])->name('setup.store');
+            Route::get('nip-lookup', [BranchSetupController::class, 'nipLookup'])->middleware('throttle:20,1')->name('nip-lookup');
             Route::get('/', [Shop\LeaderController::class, 'index'])->name('index');
             Route::get('dashboard', [Shop\LeaderController::class, 'dashboard'])->name('dashboard');
         });
 
         Route::prefix('worker')->name('worker.')->middleware('role:shop_worker')->group(function () {
+            Route::get('team', TeamMembersController::class)->name('team');
             Route::get('/', [Shop\WorkerController::class, 'index'])->name('index');
             Route::get('dashboard', [Shop\WorkerController::class, 'dashboard'])->name('dashboard');
         });
     });
 
-// Link z maila: gość bez konta trafia na rejestrację (e-mail wypełniony z zaproszenia), gość z kontem
-// na logowanie, a zalogowany widzi pole na klucz. Po rejestracji/logowaniu wraca na ten link.
+// Link from the email: a guest without an account lands on registration (email prefilled from the invitation), a guest with an account
+// lands on login, and a logged-in user sees the key field. After registering/logging in they return to this link.
 Route::get('organization-invitations/{invitation}', [AcceptOrganizationInvitationController::class, 'show'])
     ->name('organization-invitations.show');
 
@@ -138,7 +199,22 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('invitations/{invitation}', [TeamInvitationController::class, 'decline'])->name('invitations.decline');
 });
 
+// Chat: only people from the same organization (checked by ChatService)
+Route::middleware(['auth', 'verified'])->prefix('chat')->name('chat.')->group(function () {
+    Route::get('/', [ChatController::class, 'index'])->name('index');
+    Route::get('contacts', [ChatController::class, 'contacts'])->name('contacts');
+    Route::get('{user}/messages', [ChatController::class, 'messages'])->whereNumber('user')->name('messages');
+    Route::post('{user}/typing', [ChatController::class, 'typing'])
+        ->whereNumber('user')
+        ->middleware('throttle:120,1')
+        ->name('typing');
+    Route::post('{user}/messages', [ChatController::class, 'send'])
+        ->whereNumber('user')
+        ->middleware('throttle:60,1')
+        ->name('send');
+});
+
 require __DIR__.'/settings.php';
 
-// Nieznane adresy też przechodzą przez grupę "web" (sesja, użytkownik), więc 404 wie, dokąd przekierować
+// Unknown URLs also go through the "web" group (session, user), so the 404 knows where to redirect
 Route::fallback(fn () => abort(404));

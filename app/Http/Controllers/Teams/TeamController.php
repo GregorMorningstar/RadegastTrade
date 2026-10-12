@@ -36,7 +36,7 @@ class TeamController extends Controller
      */
     public function store(SaveTeamRequest $request, CreateTeam $createTeam): RedirectResponse
     {
-        // Nowych zespołów nie zakłada się z ustawień: zespoły powstają razem z kontami
+        // New teams are not created from settings: teams are created together with accounts
         abort(403, 'Dodawanie nowych zespołów jest wyłączone.');
 
         $team = $createTeam->handle($request->user(), $request->validated('name'));

@@ -7,7 +7,7 @@ use App\Http\Requests\Platform\StoreOrganizationRequest;
 use App\Models\Organization;
 use App\Models\OrganizationInvitation;
 use App\Models\User;
-use App\Services\NipService;
+use App\Services\Contracts\NipServiceInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,7 +18,7 @@ use Inertia\Response;
 class OrganizationOwnerController extends Controller
 {
     /**
-     * Panel: dane organizacji (tylko do odczytu).
+     * Panel: organization details (read-only).
      */
     public function index(Request $request): Response|RedirectResponse
     {
@@ -31,7 +31,7 @@ class OrganizationOwnerController extends Controller
     }
 
     /**
-     * Dashboard: podsumowanie organizacji (siedziby, osoby) i jej kod kreskowy.
+     * Dashboard: organization summary (headquarters, people) and its barcode.
      */
     public function dashboard(Request $request): Response|RedirectResponse
     {
@@ -65,8 +65,8 @@ class OrganizationOwnerController extends Controller
     }
 
     /**
-     * Formularz uzupełnienia danych organizacji po przyjęciu zaproszenia.
-     * Nazwę podaje właściciel, a e-mail (jego adres z zaproszenia) jest tylko do odczytu.
+     * Form for completing organization details after accepting the invitation.
+     * The owner provides the name, and the email (their address from the invitation) is read-only.
      */
     public function setup(Request $request): Response|RedirectResponse
     {
@@ -82,8 +82,8 @@ class OrganizationOwnerController extends Controller
     }
 
     /**
-     * Tworzy organizację (z kodem kreskowym) i przypisuje ją zapraszanemu właścicielowi.
-     * Nazwę podaje właściciel, a e-mail to jego adres z zaproszenia (wartość z formularza jest ignorowana).
+     * Creates the organization (with a barcode) and assigns it to the invited owner.
+     * The owner provides the name, and the email is their address from the invitation (the form value is ignored).
      */
     public function storeSetup(StoreOrganizationRequest $request): RedirectResponse
     {
@@ -102,7 +102,7 @@ class OrganizationOwnerController extends Controller
 
             $user->forceFill(['organization_id' => $organization->id])->save();
 
-            // zaproszenie wskazuje teraz utworzoną organizację
+            // the invitation now points to the created organization
             $invitation?->forceFill(['organization_id' => $organization->id])->save();
         });
 
@@ -112,9 +112,9 @@ class OrganizationOwnerController extends Controller
     }
 
     /**
-     * Dane firmy z rejestru MF po NIP, do wstrzyknięcia w formularz.
+     * Company data from the MF register by NIP, to be injected into the form.
      */
-    public function nipLookup(Request $request, NipService $nipService): JsonResponse
+    public function nipLookup(Request $request, NipServiceInterface $nipService): JsonResponse
     {
         $nip = $request->validate(['nip' => ['required', 'string', 'max:20']])['nip'];
 
@@ -122,7 +122,7 @@ class OrganizationOwnerController extends Controller
     }
 
     /**
-     * Przyjęte zaproszenie właściciela, któremu jeszcze nie utworzono organizacji.
+     * Accepted owner invitation whose organization has not been created yet.
      */
     private function acceptedInvitation(User $user): ?OrganizationInvitation
     {
@@ -135,7 +135,7 @@ class OrganizationOwnerController extends Controller
     }
 
     /**
-     * Właściciel bez organizacji najpierw uzupełnia jej dane.
+     * An owner without an organization first fills in its details.
      */
     private function withOrganization(Request $request): ?RedirectResponse
     {

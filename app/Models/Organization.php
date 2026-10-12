@@ -9,10 +9,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Organizacja nadrzędna: może mieć wiele siedzib sklepów i hurtowni.
+ * Parent organization: it can have many shop and warehouse headquarters.
  *
- * NIP jest unikalny w skali organizacji (dwie organizacje nie mogą mieć tego samego),
- * natomiast jej siedziby mogą go współdzielić.
+ * NIP is unique across organizations (two organizations cannot share one),
+ * while its headquarters may share it.
  */
 #[Fillable([
     'name',
@@ -35,7 +35,7 @@ class Organization extends Model
 
     protected static function booted(): void
     {
-        // NIP organizacji nie może być już używany przez siedzibę innej organizacji
+        // An organization's NIP must not already be used by another organization's headquarters
         static::saving(function (Organization $organization) {
             if (blank($organization->NIP) || ! $organization->isDirty('NIP')) {
                 return;
@@ -67,7 +67,7 @@ class Organization extends Model
     }
 
     /**
-     * Użytkownicy należący do organizacji (np. właściciele).
+     * Users belonging to the organization (e.g. owners).
      *
      * @return HasMany<User, $this>
      */

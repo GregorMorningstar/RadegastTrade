@@ -11,7 +11,7 @@ use InvalidArgumentException;
 class Barcode
 {
     /**
-     * Modele wyszukiwane po prefiksie kodu (klucz zgodny z config/barcode.php).
+     * Models looked up by the code prefix (key matching config/barcode.php).
      *
      * @var array<string, class-string>
      */
@@ -23,7 +23,7 @@ class Barcode
     ];
 
     /**
-     * Prefiks (4 cyfry z zakresu 2000-2999) skonfigurowany dla danego rodzaju encji.
+     * Prefix (4 digits from the 2000-2999 range) configured for the given entity type.
      */
     public static function prefix(string $key): string
     {
@@ -39,7 +39,7 @@ class Barcode
     }
 
     /**
-     * Wszystkie skonfigurowane prefiksy, bez prefiksu produktów własnych.
+     * All configured prefixes, excluding the own-products prefix.
      *
      * @return array<int, string>
      */
@@ -53,7 +53,7 @@ class Barcode
     }
 
     /**
-     * Buduje poprawny EAN-13: prefiks + ID dopełnione zerami + cyfra kontrolna.
+     * Builds a valid EAN-13: prefix + zero-padded ID + check digit.
      */
     public static function ean13(string $key, int $id): string
     {
@@ -71,7 +71,7 @@ class Barcode
     }
 
     /**
-     * Cyfra kontrolna EAN-13 dla 12 cyfr.
+     * EAN-13 check digit for 12 digits.
      */
     public static function checkDigit(string $base): int
     {
@@ -84,7 +84,7 @@ class Barcode
     }
 
     /**
-     * Czy kod ma poprawną długość i cyfrę kontrolną EAN-13.
+     * Whether the code has a valid length and EAN-13 check digit.
      */
     public static function isValidEan13(string $code): bool
     {
@@ -93,7 +93,7 @@ class Barcode
     }
 
     /**
-     * Czy kod zaczyna się od prefiksu zarezerwowanego dla encji systemu (nie dla produktów).
+     * Whether the code starts with a prefix reserved for system entities (not for products).
      */
     public static function usesEntityPrefix(string $code): bool
     {
@@ -107,9 +107,9 @@ class Barcode
     }
 
     /**
-     * Rozpoznaje rodzaj kodu po prefiksie i zwraca znaleziony rekord systemu (użytkownik,
-     * organizacja, siedziba) albo null. Dla kodów bez prefiksu systemowego (towary od
-     * producentów) zwraca null – ich wyszukiwanie należy do modułu produktów.
+     * Recognizes the code type by its prefix and returns the matching system record (user,
+     * organization, headquarters) or null. For codes without a system prefix (goods from
+     * manufacturers) it returns null – looking those up belongs to the products module.
      */
     public static function resolve(string $code): ?object
     {

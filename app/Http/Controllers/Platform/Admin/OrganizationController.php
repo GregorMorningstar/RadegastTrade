@@ -12,8 +12,8 @@ use Inertia\Response;
 class OrganizationController extends Controller
 {
     /**
-     * Strona dodawania organizacji: administrator wysyła zaproszenie e-mail,
-     * a dane organizacji uzupełnia zapraszana osoba po jego przyjęciu.
+     * Organization creation page: the administrator sends an email invitation,
+     * and the invited person fills in the organization details after accepting it.
      */
     public function create(): Response
     {
@@ -23,7 +23,7 @@ class OrganizationController extends Controller
     public function index(): Response
     {
         return Inertia::render('platform/admin/organizations/index', [
-            // Zaproszenia do założenia nowych organizacji, jeszcze nieprzyjęte
+            // Invitations to create new organizations, not yet accepted
             'newOrganizationInvitations' => OrganizationInvitation::query()
                 ->whereNull('organization_id')
                 ->where('is_active', true)

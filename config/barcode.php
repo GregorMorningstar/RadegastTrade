@@ -2,17 +2,17 @@
 
 /*
 |--------------------------------------------------------------------------
-| Prefiksy kodów kreskowych EAN-13
+| EAN-13 barcode prefixes
 |--------------------------------------------------------------------------
 |
-| Każdy rodzaj encji ma własny, 4-cyfrowy prefiks. Kod ma postać:
-| prefiks (4) + ID dopełnione zerami (8) + cyfra kontrolna (1) = 13 cyfr.
+| Each entity type has its own 4-digit prefix. The code has the form:
+| prefix (4) + zero-padded ID (8) + check digit (1) = 13 digits.
 |
-| Ponieważ każdy rodzaj ma inny prefiks, kody różnych encji nigdy się nie
-| powtórzą. Prefiksy MUSZĄ mieścić się w zakresie 2000-2999: GS1 rezerwuje
-| przedrostki 20-29 na użytek wewnętrzny sklepów i nigdy nie przydziela ich
-| producentom, więc kody towarów kupowanych od producentów (prawdziwe EAN)
-| nie mogą się z nimi zderzyć.
+| Because every type has a different prefix, codes of different entities never
+| collide. Prefixes MUST be within 2000-2999: GS1 reserves
+| prefixes 20-29 for stores' internal use and never assigns them
+| to manufacturers, so codes of goods bought from manufacturers (real EANs)
+| cannot collide with them.
 |
 */
 
@@ -23,8 +23,10 @@ return [
         'organization' => env('BARCODE_PREFIX_ORGANIZATION', '2002'),
         'warehouse_headquarter' => env('BARCODE_PREFIX_WAREHOUSE_HEADQUARTER', '2003'),
         'shop_headquarter' => env('BARCODE_PREFIX_SHOP_HEADQUARTER', '2004'),
+        'shop_branch' => env('BARCODE_PREFIX_SHOP_BRANCH', '2006'),
+        'warehouse_branch' => env('BARCODE_PREFIX_WAREHOUSE_BRANCH', '2007'),
 
-        // Własne produkty sklepu bez EAN od producenta
+        // Shop's own products without a manufacturer EAN
         'product' => env('BARCODE_PREFIX_PRODUCT', '2005'),
     ],
 
