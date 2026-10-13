@@ -68,7 +68,7 @@ test('sygnał pisania działa tylko w obrębie organizacji', function () {
     $this->actingAs($f['a'])->postJson(route('chat.typing', $f['outsider']))->assertForbidden();
     $this->postJson(route('chat.typing', $f['a']))->assertForbidden();
 
-    $this->actingAs(User::factory()->create(['role' => UserRole::Admin]))
+    $this->actingAs(User::factory()->create(['role' => UserRole::Employee]))
         ->postJson(route('chat.typing', $f['a']))->assertForbidden();
 
     $this->app['auth']->forgetGuards();

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Platform\Admin;
 
+use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\Organization;
 use App\Models\OrganizationInvitation;
@@ -36,7 +37,6 @@ class OrganizationController extends Controller
 
             'organizations' => Organization::query()
                 ->with([
-                    'users:id,organization_id,name,email',
                     'invitations' => fn ($query) => $query
                         ->where('is_active', true)
                         ->whereNull('accepted_at')
@@ -50,11 +50,6 @@ class OrganizationController extends Controller
                     'name' => $organization->name,
                     'NIP' => $organization->NIP,
                     'barcode' => $organization->barcode,
-                    'owners' => $organization->users->map(fn (User $user) => [
-                        'id' => $user->id,
-                        'name' => $user->name,
-                        'email' => $user->email,
-                    ])->values(),
                     'invitations' => $organization->invitations
                         ->map(fn (OrganizationInvitation $invitation) => $this->invitationData($invitation))
                         ->values(),

@@ -5,7 +5,11 @@ namespace App\Providers;
 use App\Repositories\Contracts\BranchRepositoryInterface;
 use App\Repositories\Contracts\HeadquarterRepositoryInterface;
 use App\Repositories\Contracts\OrganizationInvitationRepositoryInterface;
+use App\Repositories\Contracts\OrganizationMemberRepositoryInterface;
 use App\Repositories\EloquentOrganizationInvitationRepository;
+use App\Repositories\EloquentOrganizationMemberRepository;
+use App\Services\Contracts\OrganizationMembersServiceInterface;
+use App\Services\OrganizationMembersService;
 use App\Repositories\ShopBranchRepository;
 use App\Repositories\ShopHeadquarterRepository;
 use App\Repositories\WarehouseBranchRepository;
@@ -56,6 +60,8 @@ class AppServiceProvider extends ServiceProvider
             $app->make(NipServiceInterface::class),
         ));
 
+        $this->app->bind(OrganizationMemberRepositoryInterface::class, EloquentOrganizationMemberRepository::class);
+        $this->app->bind(OrganizationMembersServiceInterface::class, OrganizationMembersService::class);
         $this->app->bind(BranchServiceInterface::class, BranchService::class);
         $this->app->bind(BranchWorkerServiceInterface::class, BranchWorkerService::class);
         $this->app->bind(ChatServiceInterface::class, ChatService::class);

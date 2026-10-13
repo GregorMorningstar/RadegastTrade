@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Storage;
 /**
  * Dwie osoby z jednej organizacji, osoba z innej organizacji i konto bez organizacji.
  *
- * @return array{a: User, b: User, outsider: User, loner: User, org: Organization}
+ * @return array{a: User, b: User, outsider: User, loner: User, admin: User, org: Organization}
  */
 function chatFixture(): array
 {
@@ -24,7 +24,8 @@ function chatFixture(): array
         'a' => User::factory()->create(['role' => UserRole::ORGANIZATION_OWNER, 'organization_id' => $org->id, 'name' => 'Ala']),
         'b' => User::factory()->create(['role' => UserRole::SHOP_OWNER, 'organization_id' => $org->id, 'name' => 'Bartek']),
         'outsider' => User::factory()->create(['role' => UserRole::ORGANIZATION_OWNER, 'organization_id' => $other->id, 'name' => 'Obcy']),
-        'loner' => User::factory()->create(['role' => UserRole::Admin, 'name' => 'Admin']),
+        'loner' => User::factory()->create(['role' => UserRole::Employee, 'name' => 'Samotny']),
+        'admin' => User::factory()->create(['role' => UserRole::Admin, 'name' => 'Admin']),
     ];
 }
 
@@ -35,10 +36,13 @@ test('lista kontaktów zawiera tylko osoby z mojej organizacji, bez mnie', funct
         ->getJson(route('chat.contacts'))
         ->assertOk()
         ->assertJsonPath('me', $f['a']->id)
-        ->assertJsonCount(1, 'contacts')
-        ->assertJsonPath('contacts.0.id', $f['b']->id)
-        ->assertJsonPath('contacts.0.role', UserRole::SHOP_OWNER->label())
-        ->assertJsonPath('unread', 0);
+        ->assertJsonPath('unread', 0)
+        ->assertJsonFragment(['id' => $f['b']->id, 'role' => UserRole::SHOP_OWNER->label()])
+        ->assertJsonMissing(['id' => $f['outsider']->id]);
+
+    // besides the organization, only the platform staff (administrators and managers) are on the list
+    $roles = collect($this->getJson(route('chat.contacts'))->json('contacts'))->pluck('role')->unique()->sort()->values()->all();
+    expect($roles)->toBe(collect([UserRole::Admin->label(), UserRole::Manager->label(), UserRole::SHOP_OWNER->label()])->sort()->values()->all());
 
     // konto bez organizacji nie ma z kim rozmawiać
     $this->actingAs($f['loner'])->getJson(route('chat.contacts'))->assertOk()->assertJsonCount(0, 'contacts');
@@ -130,9 +134,13 @@ test('aktywni kontakty są na początku listy', function () {
     $c = User::factory()->create(['role' => UserRole::SHOP_LEADER, 'organization_id' => $f['org']->id, 'name' => 'Cezary', 'last_seen_at' => now()]);
     $f['b']->forceFill(['last_seen_at' => now()->subHour()])->save();
 
-    $this->actingAs($f['a'])->getJson(route('chat.contacts'))
-        ->assertJsonPath('contacts.0.id', $c->id)
-        ->assertJsonPath('contacts.1.id', $f['b']->id);
+    $ids = collect($this->actingAs($f['a'])->getJson(route('chat.contacts'))->json('contacts'))
+        ->pluck('id')
+        ->filter(fn ($id) => in_array($id, [$c->id, $f['b']->id], true))
+        ->values()
+        ->all();
+
+    expect($ids)->toBe([$c->id, $f['b']->id]);
 });
 
 test('strona czatu jest dostępna po zalogowaniu, dla konta bez organizacji z informacją', function () {
@@ -182,3 +190,29 @@ test('zdjęcie profilowe musi być obrazem o rozsądnym rozmiarze', function (ca
     'za mały' => [fn () => UploadedFile::fake()->image('a.png', 20, 20)],
     'skrypt jako obraz' => [fn () => UploadedFile::fake()->create('a.php', 10, 'application/x-php')],
 ]);
+
+test('administrator pisze z osobami z dowolnej organizacji, a one widzą go na liście', function () {
+    Event::fake([MessageSent::class]);
+    $f = chatFixture();
+
+    // the administrator has no organization, yet sees people from organizations and can write to them
+    $this->actingAs($f['admin'])->getJson(route('chat.contacts'))
+        ->assertJsonCount(3, 'contacts');
+
+    $this->postJson(route('chat.send', $f['outsider']), ['body' => 'Dzień dobry'])
+        ->assertCreated()
+        ->assertJsonPath('message.body', 'Dzień dobry');
+
+    expect(Message::first()->organization_id)->toBe($f['outsider']->organization_id);
+
+    // the person answers and sees the administrator among contacts
+    $this->actingAs($f['outsider'])->getJson(route('chat.contacts'))
+        ->assertJsonPath('unread', 1)
+        ->assertJsonFragment(['id' => $f['admin']->id, 'name' => 'Admin']);
+    $this->postJson(route('chat.send', $f['admin']), ['body' => 'Cześć'])->assertCreated();
+    $this->actingAs($f['admin'])->getJson(route('chat.messages', $f['outsider']))->assertJsonCount(2, 'messages');
+
+    // an account without an organization still cannot talk to the administrator, and users cannot see each other across organizations
+    $this->actingAs($f['loner'])->postJson(route('chat.send', $f['admin']), ['body' => 'x'])->assertForbidden();
+    $this->actingAs($f['a'])->postJson(route('chat.send', $f['outsider']), ['body' => 'x'])->assertForbidden();
+});

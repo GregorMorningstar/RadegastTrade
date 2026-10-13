@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\Contracts\ChatServiceInterface;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -43,6 +44,7 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $user,
             ],
+            'canChat' => $user !== null && app(ChatServiceInterface::class)->canUse($user),
             'rolePanel' => $user ? [
                 'base' => $user->role->basePath(),
                 'name' => $user->role->panelName(),

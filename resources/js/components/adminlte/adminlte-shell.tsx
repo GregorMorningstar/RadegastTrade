@@ -370,7 +370,7 @@ export default function AdminLteShell({
                                     onClick={() => {
                                         setMobileOpen(false);
 
-                                        if (!props.auth?.user?.organization_id) {
+                                        if (!props.canChat) {
                                             // konto bez organizacji: strona z informacją, okienka nie ma
                                             router.visit(item.href);
                                         } else if (!url.startsWith("/chat")) {

@@ -14,4 +14,12 @@ class WarehouseHeadquarterController extends Controller
     {
         return Inertia::render('platform/admin/warehouses/headquarters/index', ['rows' => $structure->headquarters(HeadquarterType::Warehouse)]);
     }
+
+    /**
+     * Tree of all warehouses headquarters with their organizations, branches and people.
+     */
+    public function tree(): Response
+    {
+        return Inertia::render('platform/admin/warehouses/my-headquarters/index');
+    }
 }

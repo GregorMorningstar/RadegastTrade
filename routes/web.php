@@ -32,6 +32,17 @@ Route::prefix('platform')
     ->name('platform.')
     ->middleware(['auth', 'verified'])
     ->group(function () {
+        // Preview of the people in an organization's shops and warehouses (administrator and manager)
+        Route::get('organizations/{organization}/members', Platform\OrganizationMembersController::class)
+            ->middleware(['role:admin,manager,employee', 'throttle:120,1'])
+            ->name('organizations.members');
+
+        // Tree of all shop or warehouse headquarters (administrator, manager and employee)
+        Route::get('headquarters/{type}/tree', Platform\HeadquartersTreeController::class)
+            ->whereIn('type', ['shops', 'warehouses'])
+            ->middleware(['role:admin,manager,employee', 'throttle:120,1'])
+            ->name('headquarters.tree');
+
         Route::prefix('admin')->name('admin.')->middleware('role:admin')->group(function () {
             Route::get('/', [Platform\AdminController::class, 'index'])->name('index');
             Route::get('dashboard', [Platform\AdminController::class, 'dashboard'])->name('dashboard');
@@ -49,11 +60,13 @@ Route::prefix('platform')
 
             Route::prefix('warehouses')->name('warehouses.')->group(function () {
                 Route::get('headquarters', [Platform\Admin\WarehouseHeadquarterController::class, 'index'])->name('headquarters.index');
+                Route::get('my-headquarters', [Platform\Admin\WarehouseHeadquarterController::class, 'tree'])->name('headquarters.tree');
                 Route::get('branches', [Platform\Admin\WarehouseBranchController::class, 'index'])->name('branches.index');
             });
 
             Route::prefix('shops')->name('shops.')->group(function () {
                 Route::get('headquarters', [Platform\Admin\ShopHeadquarterController::class, 'index'])->name('headquarters.index');
+                Route::get('my-headquarters', [Platform\Admin\ShopHeadquarterController::class, 'tree'])->name('headquarters.tree');
                 Route::get('branches', [Platform\Admin\ShopBranchController::class, 'index'])->name('branches.index');
             });
         });

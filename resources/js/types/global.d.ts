@@ -12,6 +12,7 @@ declare module '@inertiajs/core' {
         sharedPageProps: {
             name: string;
             auth: Auth;
+            canChat: boolean;
             rolePanel: { base: string; name: string } | null;
             sidebarOpen: boolean;
             currentTeam: Team | null;

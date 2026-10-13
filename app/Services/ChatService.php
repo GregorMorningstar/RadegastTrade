@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Services\Contracts\ChatServiceInterface;
+use App\Enums\UserRole;
 use App\Events\MessageSent;
 use App\Events\UserTyping;
 use App\Models\Message;
@@ -23,25 +24,39 @@ class ChatService implements ChatServiceInterface
     public const TYPING_SECONDS = 6;
 
     /**
-     * Whether the user can use the chat at all (belongs to an organization).
+     * Whether the user can use the chat at all (belongs to an organization, or is an administrator).
      */
     public function canUse(User $user): bool
     {
-        return $user->organization_id !== null;
+        return $user->organization_id !== null || $this->isAdmin($user);
     }
 
     /**
      * A conversation is allowed only with another person from the same organization.
+     * The platform administrator is the exception: they can talk with people from any organization.
      */
     public function ensureCanChat(User $me, User $other): void
     {
         abort_unless(
-            $this->canUse($me)
-                && $me->id !== $other->id
-                && $other->organization_id === $me->organization_id,
+            $this->canUse($me) && $me->id !== $other->id && $this->canTalk($me, $other),
             403,
             'Możesz rozmawiać tylko z osobami z Twojej organizacji.',
         );
+    }
+
+    private function isAdmin(User $user): bool
+    {
+        return in_array($user->role, [UserRole::Admin, UserRole::Manager], true);
+    }
+
+    private function canTalk(User $me, User $other): bool
+    {
+        if ($me->organization_id !== null && $other->organization_id === $me->organization_id) {
+            return true;
+        }
+
+        return ($this->isAdmin($me) && $other->organization_id !== null)
+            || ($this->isAdmin($other) && $me->organization_id !== null);
     }
 
     /**
@@ -57,7 +72,6 @@ class ChatService implements ChatServiceInterface
         }
 
         $last = Message::query()
-            ->where('organization_id', $me->organization_id)
             ->where(fn ($query) => $query->where('sender_id', $me->id)->orWhere('recipient_id', $me->id))
             ->latest('id')
             ->limit(500)
@@ -73,7 +87,15 @@ class ChatService implements ChatServiceInterface
             ->pluck('total', 'sender_id');
 
         return User::query()
-            ->where('organization_id', $me->organization_id)
+            ->where(function ($query) use ($me) {
+                if ($this->isAdmin($me)) {
+                    // the administrator talks to people who belong to some organization
+                    $query->whereNotNull('organization_id');
+                } else {
+                    // organization members, plus the platform administrators
+                    $query->where('organization_id', $me->organization_id)->orWhereIn('role', [UserRole::Admin, UserRole::Manager]);
+                }
+            })
             ->whereKeyNot($me->id)
             ->get()
             ->map(function (User $user) use ($last, $unread, $me) {
@@ -131,7 +153,7 @@ class ChatService implements ChatServiceInterface
         $this->ensureCanChat($me, $other);
 
         $message = Message::create([
-            'organization_id' => $me->organization_id,
+            'organization_id' => $me->organization_id ?? $other->organization_id,
             'sender_id' => $me->id,
             'recipient_id' => $other->id,
             'body' => trim($body),
@@ -196,7 +218,6 @@ class ChatService implements ChatServiceInterface
     private function conversation(User $a, User $b)
     {
         return Message::query()
-            ->where('organization_id', $a->organization_id)
             ->where(fn ($query) => $query
                 ->where(fn ($q) => $q->where('sender_id', $a->id)->where('recipient_id', $b->id))
                 ->orWhere(fn ($q) => $q->where('sender_id', $b->id)->where('recipient_id', $a->id)));

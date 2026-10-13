@@ -4,13 +4,25 @@ import { useEffect, useRef, useState } from 'react';
 import ChatBox from '@/components/chat/chat-box';
 import { useChat } from '@/components/chat/use-chat';
 import UserAvatar from '@/components/user-avatar';
-import { chatWindow, useChatWindowOpen } from '@/lib/chat-window';
+import { chatWindow, usePendingChatUser, useChatWindowOpen } from '@/lib/chat-window';
 
 function ChatWidgetInner() {
     const open = useChatWindowOpen();
     const chat = useChat(open);
     const [toast, setToast] = useState<{ id: number; name: string; avatar: string; body: string } | null>(null);
     const seen = useRef<number | null>(null);
+    const pendingUser = usePendingChatUser();
+
+    // Chat opened from a "write to this person" button: jump straight to that conversation
+    useEffect(() => {
+        if (pendingUser !== null && chat.loaded) {
+            if (chat.contacts.some((contact) => contact.id === pendingUser)) {
+                chat.select(pendingUser);
+            }
+
+            chatWindow.clearPending();
+        }
+    }, [pendingUser, chat.loaded, chat.contacts]);
 
     // Nowa wiadomość od kogoś, gdy nie patrzę na tę rozmowę: krótki podgląd nad przyciskiem czatu, bez odświeżania strony
     useEffect(() => {
@@ -133,7 +145,7 @@ function ChatWidgetInner() {
 export default function ChatWidget() {
     const { props, url } = usePage();
 
-    if (!props.auth?.user?.organization_id || url.split('?')[0] === '/chat') {
+    if (!props.canChat || url.split('?')[0] === '/chat') {
         return null;
     }
 
