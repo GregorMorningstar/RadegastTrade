@@ -2,7 +2,7 @@
 
 namespace App\Http\Requests\Platform;
 
-use App\Services\Contracts\NipServiceInterface;
+use App\Rules\RegisteredNip;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -20,8 +20,7 @@ class StoreOrganizationRequest extends FormRequest
             'NIP' => [
                 'nullable',
                 'digits:10',
-                fn ($attribute, $value, $fail) => app(NipServiceInterface::class)->validateNip((string) $value)
-                    ?: $fail('Nieprawidłowy numer NIP (błędna suma kontrolna).'),
+                new RegisteredNip,
                 'unique:organizations,NIP',
             ],
             'REGON' => ['nullable', 'digits:9', 'unique:organizations,REGON'],

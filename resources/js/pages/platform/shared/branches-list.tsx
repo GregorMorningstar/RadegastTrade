@@ -3,6 +3,7 @@ import { Send, Trash2 } from 'lucide-react';
 import type { FormEvent } from 'react';
 import Barcode from 'react-barcode';
 import { Card, Content, ContentHeader } from '@/components/adminlte/blocks';
+import UnitStaffPicker from '@/components/unit-staff-picker';
 
 type Invitation = {
     id: number;
@@ -22,13 +23,15 @@ export type BranchesPageProps = {
         barcode: string | null;
         NIP: string | null;
         address: string;
-        managers: { id: number; name: string; email: string }[];
+        managers: { id: number; name: string; email: string; phone: string | null; role: string }[];
     }[];
 };
 
 /** Placówki sklepu albo hurtowni i zaproszenia ich kierowników (panel kierownika siedziby). */
 export default function BranchesPage({ group, headquarter, newInvitations, branches }: BranchesPageProps) {
     const base = `/${group}/owner`;
+    // the kind of branches follows from the manager's role: a shop manager invites shop branches, a warehouse manager warehouse branches
+    const kind = group === 'shop' ? { label: 'sklepu' } : { label: 'hurtowni' };
     const form = useForm({ email: '', phone: '' });
 
     const submit = (event: FormEvent) => {
@@ -47,15 +50,15 @@ export default function BranchesPage({ group, headquarter, newInvitations, branc
 
     return (
         <>
-            <Head title="Placówki" />
+            <Head title={`Placówki ${kind.label}`} />
             <ContentHeader
-                title="Placówki"
-                crumbs={[{ label: 'Panel', href: base }, { label: 'Placówki' }]}
+                title={`Placówki ${kind.label}`}
+                crumbs={[{ label: 'Panel', href: base }, { label: `Placówki ${kind.label}` }]}
             />
             <Content>
-                <Card title="Zaproś kierownika nowej placówki" color="success" className="mb-4">
+                <Card title={`Zaproś kierownika nowej placówki ${kind.label}`} color="success" className="mb-4">
                     <p className="mb-3 text-sm text-[#6c757d]">
-                        Zaproszony kierownik założy placówkę w siedzibie <strong>{headquarter.name}</strong> po
+                        Zaproszony kierownik założy placówkę <strong>{kind.label}</strong> w siedzibie <strong>{headquarter.name}</strong> po
                         przyjęciu zaproszenia i poda jej nazwę oraz NIP. Zaproszenie jest powiązane z Twoją
                         organizacją.
                     </p>
@@ -65,7 +68,7 @@ export default function BranchesPage({ group, headquarter, newInvitations, branc
                                 type="email"
                                 value={form.data.email}
                                 onChange={(e) => form.setData('email', e.target.value)}
-                                placeholder="E-mail kierownika placówki"
+                                placeholder={`E-mail kierownika placówki ${kind.label}`}
                                 required
                                 className="w-64 rounded border border-[#ced4da] px-3 py-1.5 text-sm"
                             />
@@ -123,8 +126,8 @@ export default function BranchesPage({ group, headquarter, newInvitations, branc
                 </Card>
 
                 {branches.length === 0 && (
-                    <Card title="Placówki" color="primary">
-                        Nie ma jeszcze żadnej placówki. Zaproś kierownika, który ją założy.
+                    <Card title={`Placówki ${kind.label}`} color="primary">
+                        Nie ma jeszcze żadnej placówki {kind.label}. Zaproś kierownika, który ją założy.
                     </Card>
                 )}
 
@@ -159,6 +162,20 @@ export default function BranchesPage({ group, headquarter, newInvitations, branc
                                     </div>
                                 )}
                             </div>
+
+                            <UnitStaffPicker
+                                title="Kierownicy placówki"
+                                noun="kierownika placówki"
+                                group={group === 'shop' ? 'sklepu' : 'hurtowni'}
+                                staysInUnit
+                                minimum={1}
+                                unitName={branch.name}
+                                current={branch.managers}
+                                candidatesUrl={`${base}/branches/${branch.id}/leaders/candidates`}
+                                assignUrl={`${base}/branches/${branch.id}/leaders`}
+                                removeUrl={(userId) => `${base}/branches/${branch.id}/leaders/${userId}`}
+                                demoteUrl={(userId) => `${base}/branches/${branch.id}/leaders/${userId}/role`}
+                            />
                         </Card>
                     ))}
                 </div>

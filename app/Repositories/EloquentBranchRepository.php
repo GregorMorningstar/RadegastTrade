@@ -35,7 +35,7 @@ abstract class EloquentBranchRepository implements BranchRepositoryInterface
     {
         return $this->query()
             ->where($this->headquarterColumn(), $headquarterId)
-            ->with('users:id,shop_branch_id,warehouse_branch_id,name,email')
+            ->with('users:id,shop_branch_id,warehouse_branch_id,name,email,phone,role')
             ->orderBy('name')
             ->get();
     }

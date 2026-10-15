@@ -35,7 +35,7 @@ abstract class EloquentHeadquarterRepository implements HeadquarterRepositoryInt
         return $this->query()
             ->where('organization_id', $organizationId)
             ->with([
-                'users:id,shop_headquarter_id,warehouse_headquarter_id,name,email',
+                'users:id,shop_headquarter_id,warehouse_headquarter_id,name,email,phone,role',
                 'invitations' => fn ($query) => $query
                     ->whereIn('role', [UserRole::SHOP_OWNER->value, UserRole::WAREHOUSE_OWNER->value])
                     ->where('is_active', true)

@@ -5,10 +5,12 @@ namespace App\Models;
 use App\Concerns\HasTeams;
 use App\Enums\UserRole;
 use App\Models\Concerns\GeneratesBarcode;
+use App\Observers\UserObserver;
 use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -41,7 +43,8 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string|null $last_login_timezone
  * @property-read Carbon|null $last_login_local
  */
-#[Fillable(['name', 'email', 'phone', 'avatar_path', 'last_seen_at', 'password', 'current_team_id', 'role', 'barcode', 'organization_id', 'shop_headquarter_id', 'warehouse_headquarter_id', 'shop_branch_id', 'warehouse_branch_id', 'terms_accepted_at', 'privacy_accepted_at', 'last_login_at', 'last_login_timezone'])]
+#[Fillable(['name', 'email', 'phone', 'avatar_path', 'last_seen_at', 'is_active', 'deactivated_by', 'deactivated_at', 'password', 'current_team_id', 'role', 'barcode', 'organization_id', 'shop_headquarter_id', 'warehouse_headquarter_id', 'shop_branch_id', 'warehouse_branch_id', 'terms_accepted_at', 'privacy_accepted_at', 'last_login_at', 'last_login_timezone'])]
+#[ObservedBy(UserObserver::class)]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements MustVerifyEmail
 {
@@ -66,6 +69,8 @@ class User extends Authenticatable implements MustVerifyEmail
             'privacy_accepted_at' => 'datetime',
             'last_login_at' => 'datetime',
             'last_seen_at' => 'datetime',
+            'is_active' => 'boolean',
+            'deactivated_at' => 'datetime',
             'role' => UserRole::class,
         ];
     }
@@ -101,6 +106,16 @@ class User extends Authenticatable implements MustVerifyEmail
     protected function barcodeKey(): string
     {
         return 'user';
+    }
+
+    /**
+     * Who switched the account off (null when it is active or the person no longer exists).
+     *
+     * @return BelongsTo<User, $this>
+     */
+    public function deactivatedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'deactivated_by');
     }
 
     /**

@@ -2,29 +2,48 @@
 
 namespace App\Enums;
 
+/**
+ * The roles of the platform and who invites whom:
+ *
+ *   Admin → organization owners → headquarters managers → branch leaders → workers
+ *
+ * The role of an account says what the account may do; where it works (headquarters / branch) and in which
+ * position (manager / worker) is kept in the unit_memberships table.
+ */
 enum UserRole: string
 {
-    // Universal roles (e.g. for the platform / general access)
+    // Platform administrator: sends the invitations that create organizations (to their owners)
     case Admin    = 'admin';
+    // Platform manager and employee: staff accounts without a panel (they only preview the structure of the
+    // organizations); the employee is also the default role of an account until an invitation gives it another one
     case Manager  = 'manager';
     case Employee = 'employee';
 
-    // Organization owner (the parent unit: invites warehouse and shop headquarters)
+    // Organization owner: sends invitations to the main headquarters (shops and warehouses)
     case ORGANIZATION_OWNER = 'organization_owner';
 
-    // Warehouse
+    // Warehouse: the main headquarters manager adds branches, the branch leader (manager) invites workers
     case WAREHOUSE_OWNER   = 'warehouse_owner';
     case WAREHOUSE_LEADER  = 'warehouse_leader';
     case WAREHOUSE_WORKER  = 'warehouse_worker';
 
-    // Shop
+    // Shop: the main headquarters manager adds branches, the branch leader (manager) invites workers
     case SHOP_OWNER        = 'shop_owner';
     case SHOP_LEADER       = 'shop_leader';
     case SHOP_WORKER       = 'shop_worker';
 
     /**
-     * Role group used in the folder, controller and URL structure: platform, warehouse or shop.
+     * Role group used in the controller and URL structure: platform, warehouse or shop.
      */
+    public function group(): string
+    {
+        return match (true) {
+            $this->isWarehouse() => 'warehouse',
+            $this->isShop() => 'shop',
+            default => 'platform',
+        };
+    }
+
     /**
      * Role views folder in resources/js/pages (everything lives under platform/).
      */
@@ -33,15 +52,6 @@ enum UserRole: string
         return match (true) {
             $this->isWarehouse() => 'platform/warehouses',
             $this->isShop() => 'platform/shop',
-            default => 'platform',
-        };
-    }
-
-    public function group(): string
-    {
-        return match (true) {
-            $this->isWarehouse() => 'warehouse',
-            $this->isShop() => 'shop',
             default => 'platform',
         };
     }
@@ -89,11 +99,21 @@ enum UserRole: string
     }
 
     /**
-     * Route name of the role's dedicated dashboard, e.g. shop.owner.dashboard.
+     * Whether the role has a panel: the roles of the invitation chain have one (the administrator, the organization
+     * owner, the headquarters managers, the branch leaders and the workers); the manager and the employee have none.
+     */
+    public function hasPanel(): bool
+    {
+        return ! in_array($this, [self::Manager, self::Employee], true);
+    }
+
+    /**
+     * Route name of the role's dedicated dashboard, e.g. shop.owner.dashboard. A role without a panel lands on
+     * the page that waits for an invitation.
      */
     public function dashboardRoute(): string
     {
-        return $this->group().'.'.$this->slug().'.dashboard';
+        return $this->hasPanel() ? $this->group().'.'.$this->slug().'.dashboard' : 'account.pending';
     }
 
     /**
@@ -121,30 +141,6 @@ enum UserRole: string
     }
 
     /**
-     * Whether the role can send invitations within a team (for children / new users).
-     */
-    public function canSendInvites(): bool
-    {
-        return in_array($this, [
-            self::WAREHOUSE_OWNER,
-            self::WAREHOUSE_LEADER,
-            self::SHOP_OWNER,
-            self::SHOP_LEADER,
-        ], true);
-    }
-
-    /**
-     * Whether the role can manage team members (change roles, remove from the team).
-     */
-    public function canManageTeam(): bool
-    {
-        return in_array($this, [
-            self::WAREHOUSE_OWNER,
-            self::SHOP_OWNER,
-        ], true);
-    }
-
-    /**
      * Human-friendly role name.
      */
     public function label(): string
@@ -168,6 +164,8 @@ enum UserRole: string
 
     /**
      * List of all values as a string array (useful in migrations / validation).
+     *
+     * @return list<string>
      */
     public static function getValues(): array
     {

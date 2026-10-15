@@ -28,6 +28,14 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    // NIP verification during registration (Ministry of Finance VAT taxpayer register)
+    'nip' => [
+        // look the NIP up in the register (the checksum is always verified)
+        'check_registry' => env('NIP_REGISTRY_CHECK', true),
+        // reject the NIP when the register is unavailable (off: an outage does not block registration)
+        'strict' => env('NIP_REGISTRY_STRICT', false),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

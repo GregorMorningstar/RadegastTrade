@@ -92,6 +92,9 @@ test('siedziba może mieć inny NIP, ale istniejącego już NIP-u nie można uż
     // druga organizacja próbuje użyć tego samego, już istniejącego NIP-u
     $secondOwner = organizationOwner(Organization::create(['name' => 'Druga', 'NIP' => '5260001246']));
     $secondManager = User::factory()->create(['role' => UserRole::SHOP_OWNER, 'organization_id' => $secondOwner->organization_id]);
+    // the manager founds the headquarters only with an accepted invitation
+    [$secondInvitation] = OrganizationInvitation::issue($secondOwner->organization, $secondManager->email, $secondOwner, UserRole::SHOP_OWNER, null, '+48511222333');
+    $secondInvitation->markAccepted();
 
     $this->actingAs($secondManager)
         ->post(route('shop.owner.setup.store'), ['name' => 'Sklep', 'NIP' => OTHER_NIP])

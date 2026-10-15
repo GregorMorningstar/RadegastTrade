@@ -164,24 +164,24 @@ export default function Register({
                             />
                         </Field>
 
-                        {organizationInvitation?.phone && (
-                            <Field
+                        <Field
+                            id="phone"
+                            label="Telefon"
+                            icon={<Phone className="size-4" />}
+                            error={errors.phone}
+                        >
+                            <Input
                                 id="phone"
-                                label="Telefon"
-                                icon={<Phone className="size-4" />}
-                                error={errors.phone}
-                            >
-                                <Input
-                                    id="phone"
-                                    type="tel"
-                                    tabIndex={-1}
-                                    autoComplete="tel"
-                                    defaultValue={organizationInvitation.phone}
-                                    readOnly
-                                    className={`${inputClass} bg-muted/50`}
-                                />
-                            </Field>
-                        )}
+                                type="tel"
+                                required
+                                tabIndex={3}
+                                autoComplete="tel"
+                                name="phone"
+                                defaultValue={organizationInvitation?.phone ?? ''}
+                                placeholder="600 100 200 lub +48600100200"
+                                className={inputClass}
+                            />
+                        </Field>
 
                         <div className="grid gap-5 sm:grid-cols-2">
                             <Field

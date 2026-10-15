@@ -31,6 +31,8 @@ function chatFixture(): array
 
 test('lista kontaktów zawiera tylko osoby z mojej organizacji, bez mnie', function () {
     $f = chatFixture();
+    // the platform staff accounts are created here: the test does not depend on seeded accounts
+    User::factory()->create(['role' => UserRole::Manager, 'name' => 'Manager platformy']);
 
     $this->actingAs($f['a'])
         ->getJson(route('chat.contacts'))

@@ -1,7 +1,8 @@
 import { Head, useForm } from '@inertiajs/react';
 import { Lock, Plus, Search } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
+import { clearAutofilled, mergeLookup, newNipAutofill } from '@/lib/nip-autofill';
 
 type FormData = {
     name: string;
@@ -75,13 +76,21 @@ export default function HeadquarterSetupForm({
         country: 'PL',
     });
     const [lookup, setLookup] = useState<{ message: string; error: boolean } | null>(null);
+    // which fields the register lookup filled in, and whether the previous NIP was wrong
+    const autofill = useRef(newNipAutofill());
+
+    // wrong NIP: the fields filled in from the earlier lookup are emptied
+    const rejectNip = (message: string) => {
+        form.setData((data) => clearAutofilled(data, autofill.current));
+        setLookup({ message, error: true });
+    };
 
     // Dane z rejestru MF po NIP; nazwę uzupełniamy tylko w pustym polu
     const fetchByNip = async () => {
         const nip = form.data.NIP.replace(/\D/g, '');
 
         if (nip.length !== 10) {
-            setLookup({ message: 'Podaj 10-cyfrowy NIP.', error: true });
+            rejectNip('Podaj 10-cyfrowy NIP.');
 
             return;
         }
@@ -94,20 +103,25 @@ export default function HeadquarterSetupForm({
             const result = await response.json();
 
             if (!response.ok || !result.ok) {
-                setLookup({ message: result.error ?? 'Nie udało się pobrać danych.', error: true });
+                rejectNip(result.error ?? 'Nie udało się pobrać danych.');
 
                 return;
             }
 
             form.setData((data) => ({
-                ...data,
+                ...mergeLookup(
+                    data,
+                    {
+                        name: result.name,
+                        street: result.street,
+                        building_number: result.building_number,
+                        apartment_number: result.apartment_number,
+                        postal_code: result.zip,
+                        city: result.city,
+                    },
+                    autofill.current,
+                ),
                 NIP: nip,
-                street: result.street ?? data.street,
-                building_number: result.building_number ?? data.building_number,
-                apartment_number: result.apartment_number ?? data.apartment_number,
-                postal_code: result.zip ?? data.postal_code,
-                city: result.city ?? data.city,
-                name: data.name || (result.name ?? ''),
             }));
             setLookup({ message: 'Pobrano dane z rejestru MF.', error: false });
         } catch {

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Platform;
 
+use App\Rules\RegisteredNip;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -16,7 +17,7 @@ class StoreHeadquarterRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'NIP' => ['nullable', 'digits:10'],
+            'NIP' => ['nullable', 'digits:10', new RegisteredNip],
             'email' => ['nullable', 'email:rfc', 'max:255'],
             'phone' => ['nullable', 'string', 'max:20'],
             'street' => ['nullable', 'string', 'max:255'],

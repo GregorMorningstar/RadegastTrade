@@ -36,8 +36,8 @@ return new class extends Migration
             $table->string('avatar_path')->nullable();
             $table->timestamp('last_seen_at')->nullable();
 
-            // Phone number in E.164 form (+48123456789); unique, filled from the invitation
-            $table->string('phone', 20)->nullable()->unique();
+            // Phone number in E.164 form (+48123456789); required at registration (the invitation's number is prefilled)
+            $table->string('phone', 20)->nullable();
 
             $table->timestamp('email_verified_at')->nullable();
 

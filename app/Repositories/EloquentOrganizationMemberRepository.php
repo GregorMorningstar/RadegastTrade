@@ -34,7 +34,7 @@ class EloquentOrganizationMemberRepository implements OrganizationMemberReposito
             ->get();
     }
 
-    public function paginateHeadquarters(?int $organizationId, HeadquarterType $type, int $perPage, ?string $search = null): LengthAwarePaginator
+    public function paginateHeadquarters(?int $organizationId, HeadquarterType $type, int $perPage, ?string $search = null, ?int $headquarterId = null): LengthAwarePaginator
     {
         $headquarterModel = $type === HeadquarterType::Shop ? ShopHeadquarter::class : WarehouseHeadquarter::class;
         $branchModel = $type === HeadquarterType::Shop ? ShopBranch::class : WarehouseBranch::class;
@@ -45,6 +45,7 @@ class EloquentOrganizationMemberRepository implements OrganizationMemberReposito
         $page = $headquarterModel::query()
             ->with('organization:id,name')
             ->when($organizationId !== null, fn ($query) => $query->where('organization_id', $organizationId))
+            ->when($headquarterId !== null, fn ($query) => $query->whereKey($headquarterId))
             ->when($term !== null, fn ($query) => $query->where(function ($match) use ($term, $branchModel, $headquarterColumn) {
                 // the headquarters itself, its organization, any of its branches or any person working in it
                 $match->where('name', 'like', $term)

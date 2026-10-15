@@ -38,10 +38,22 @@ class ChatService implements ChatServiceInterface
     public function ensureCanChat(User $me, User $other): void
     {
         abort_unless(
-            $this->canUse($me) && $me->id !== $other->id && $this->canTalk($me, $other),
+            $this->canUse($me) && $me->id !== $other->id && $this->canTalk($me, $other) && $this->allowedForInactive($me, $other),
             403,
             'Możesz rozmawiać tylko z osobami z Twojej organizacji.',
         );
+    }
+
+    /**
+     * A deactivated account may talk only with the person who deactivated it and with the administrators.
+     */
+    private function allowedForInactive(User $me, User $other): bool
+    {
+        if ($me->is_active !== false) {
+            return true;
+        }
+
+        return $other->id === $me->deactivated_by || $this->isAdmin($other);
     }
 
     private function isAdmin(User $user): bool
@@ -98,6 +110,7 @@ class ChatService implements ChatServiceInterface
             })
             ->whereKeyNot($me->id)
             ->get()
+            ->filter(fn (User $user) => $this->allowedForInactive($me, $user))
             ->map(function (User $user) use ($last, $unread, $me) {
                 $message = $last->get($user->id);
 

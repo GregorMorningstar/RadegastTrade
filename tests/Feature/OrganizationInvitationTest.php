@@ -34,7 +34,7 @@ test('admin wysyła zaproszenie z kodem w mailu, a w bazie jest tylko hash kodu'
     $org = Organization::create(['name' => 'Org']);
 
     $this->actingAs(User::factory()->create(['role' => UserRole::Admin]))
-        ->post(route('platform.admin.organizations.invitations.store', $org), ['email' => 'Owner@Example.com'])
+        ->post(route('platform.admin.organizations.invitations.store-new'), ['email' => 'Owner@Example.com'])
         ->assertRedirect(route('platform.admin.organizations.index'));
 
     $invitation = OrganizationInvitation::first();
@@ -57,7 +57,7 @@ test('tylko administrator może wysyłać zaproszenia', function () {
     $org = Organization::create(['name' => 'Org']);
 
     $this->actingAs(User::factory()->create(['role' => UserRole::Manager]))
-        ->post(route('platform.admin.organizations.invitations.store', $org), ['email' => 'a@example.com'])
+        ->post(route('platform.admin.organizations.invitations.store-new'), ['email' => 'a@example.com'])
         ->assertForbidden();
 
     expect(OrganizationInvitation::count())->toBe(0);
@@ -70,7 +70,7 @@ test('nowe zaproszenie na ten sam adres unieważnia poprzednie', function () {
 
     foreach (range(1, 2) as $_) {
         $this->actingAs($admin)->post(
-            route('platform.admin.organizations.invitations.store', $org),
+            route('platform.admin.organizations.invitations.store-new'),
             ['email' => 'owner@example.com'],
         );
     }
@@ -189,6 +189,7 @@ function registrationPayload(OrganizationInvitation $invitation, string $code, a
         'name' => 'Jan Właściciel',
         'email' => $invitation->email,
         'password' => 'Str0ng-Passw0rd!',
+        'phone' => '600100200',
         'password_confirmation' => 'Str0ng-Passw0rd!',
         'terms' => '1',
         'privacy' => '1',
@@ -325,8 +326,6 @@ test('admin zaprasza nową organizację samym e-mailem, bez tworzenia jej ręczn
     Notification::fake();
     $admin = User::factory()->create(['role' => UserRole::Admin]);
 
-    $this->actingAs($admin)->get(route('platform.admin.organizations.create'))->assertOk();
-
     $this->actingAs($admin)
         ->post(route('platform.admin.organizations.invitations.store-new'), ['email' => 'Nowy@Example.com'])
         ->assertRedirect(route('platform.admin.organizations.index'));
@@ -462,6 +461,7 @@ test('nie można zarejestrować się samodzielnie, bez zaproszenia', function ()
         'name' => 'Jan',
         'email' => 'ktos@example.com',
         'password' => 'Str0ng-Passw0rd!',
+        'phone' => '600100200',
         'password_confirmation' => 'Str0ng-Passw0rd!',
         'terms' => '1',
         'privacy' => '1',
@@ -478,6 +478,7 @@ test('samo pole klucza bez tokenu zaproszenia nie pozwala się zarejestrować', 
         'name' => 'Jan',
         'email' => 'owner@example.com',
         'password' => 'Str0ng-Passw0rd!',
+        'phone' => '600100200',
         'password_confirmation' => 'Str0ng-Passw0rd!',
         'terms' => '1',
         'privacy' => '1',
@@ -501,6 +502,7 @@ test('wygasłe zaproszenie do zespołu nie pozwala się zarejestrować', functio
         'name' => 'Jan',
         'email' => 'invited@example.com',
         'password' => 'Str0ng-Passw0rd!',
+        'phone' => '600100200',
         'password_confirmation' => 'Str0ng-Passw0rd!',
         'terms' => '1',
         'privacy' => '1',

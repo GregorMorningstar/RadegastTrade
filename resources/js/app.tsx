@@ -5,8 +5,6 @@ import { initializeTheme } from '@/hooks/use-appearance';
 import { setupEcho } from '@/lib/echo';
 import AppLayout from '@/layouts/app-layout';
 import PlatformAdminLayout from '@/layouts/platform/admin/layout';
-import PlatformManagerLayout from '@/layouts/platform/manager/layout';
-import PlatformEmployeeLayout from '@/layouts/platform/employee/layout';
 import WarehouseOwnerLayout from '@/layouts/warehouse/owner/layout';
 import WarehouseLeaderLayout from '@/layouts/warehouse/leader/layout';
 import WarehouseWorkerLayout from '@/layouts/warehouse/worker/layout';
@@ -21,8 +19,6 @@ import SettingsLayout from '@/layouts/settings/layout';
 
 const roleLayouts: Record<string, React.ComponentType<{ children: React.ReactNode }>> = {
     'platform/admin': PlatformAdminLayout,
-    'platform/manager': PlatformManagerLayout,
-    'platform/employee': PlatformEmployeeLayout,
     'platform/warehouses/owner': WarehouseOwnerLayout,
     'platform/warehouses/leader': WarehouseLeaderLayout,
     'platform/warehouses/worker': WarehouseWorkerLayout,
@@ -50,6 +46,8 @@ void createInertiaApp({
             case name === 'welcome':
                 return null;
             case name.startsWith('errors/'):
+                return null;
+            case name.startsWith('account/'):
                 return null;
             case name.startsWith('legal/'):
                 return LegalLayout;

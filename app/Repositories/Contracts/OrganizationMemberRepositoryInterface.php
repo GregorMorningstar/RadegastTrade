@@ -24,11 +24,12 @@ interface OrganizationMemberRepositoryInterface
      * "staff" (people assigned directly to it, i.e. its managers) and "branchList" (its branches, each with
      * "staff": the leaders and workers of the branch).
      *
+     * With a headquarters id only that one headquarters is returned (still limited by the organization, if given).
      * With a search term only headquarters that match are returned: by their own name, NIP, e-mail, phone or
      * address, by the organization name, by the name of any of their branches or by any person working in them
      * (name, e-mail, phone, barcode).
      *
      * @return LengthAwarePaginator<int, ShopHeadquarter|WarehouseHeadquarter>
      */
-    public function paginateHeadquarters(?int $organizationId, HeadquarterType $type, int $perPage, ?string $search = null): LengthAwarePaginator;
+    public function paginateHeadquarters(?int $organizationId, HeadquarterType $type, int $perPage, ?string $search = null, ?int $headquarterId = null): LengthAwarePaginator;
 }

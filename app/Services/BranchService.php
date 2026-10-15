@@ -15,6 +15,7 @@ use App\Models\WarehouseHeadquarter;
 use App\Notifications\OrganizationInvitationNotification;
 use App\Repositories\Contracts\BranchRepositoryInterface;
 use App\Repositories\Contracts\OrganizationInvitationRepositoryInterface;
+use App\Services\Contracts\HeadquarterServiceInterface;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
@@ -32,6 +33,7 @@ class BranchService implements BranchServiceInterface
         private readonly BranchRepositoryInterface $warehouses,
         private readonly OrganizationInvitationRepositoryInterface $invitations,
         private readonly NipServiceInterface $nipService,
+        private readonly HeadquarterServiceInterface $headquarters,
     ) {
         //
     }
@@ -95,8 +97,34 @@ class BranchService implements BranchServiceInterface
      */
     public function invite(User $manager, string $email, ?string $phone = null): OrganizationInvitation
     {
-        $headquarter = $this->headquarterOf($manager);
-        $type = $this->typeOfManager($manager);
+        return $this->issueForHeadquarter($manager, $this->typeOfManager($manager), $this->headquarterOf($manager), $email, $phone);
+    }
+
+    /**
+     * The organization owner invites the leader of a new branch in one of the organization's headquarters of the
+     * given type (403 for anyone else, for a missing or foreign headquarters).
+     */
+    public function inviteAsOwner(User $owner, HeadquarterType $type, int $headquarterId, string $email, ?string $phone = null): OrganizationInvitation
+    {
+        return $this->issueForHeadquarter($owner, $type, $this->headquarters->findOwned($owner, $type, $headquarterId), $email, $phone);
+    }
+
+    /**
+     * Pending invitations to create a branch anywhere in the owner's organization, for the given type.
+     *
+     * @return Collection<int, OrganizationInvitation>
+     */
+    public function pendingInvitationsForOwner(User $owner, HeadquarterType $type): Collection
+    {
+        return $this->invitations->pendingNewBranchesOfOrganization($this->headquarters->organizationOf($owner), $type->leaderRole());
+    }
+
+    /**
+     * Sends the invitation to create a branch in the headquarters: the inviter is the headquarters manager or the
+     * organization owner, the invitation carries the organization and the headquarters.
+     */
+    private function issueForHeadquarter(User $manager, HeadquarterType $type, ShopHeadquarter|WarehouseHeadquarter $headquarter, string $email, ?string $phone): OrganizationInvitation
+    {
         $role = $type->leaderRole();
         $email = strtolower($email);
 

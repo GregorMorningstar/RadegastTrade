@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { HeadquartersTile, Pager, SearchBox, StructureLayout, TileGrid } from '@/pages/platform/admin/components/StructureTiles';
+import type { Selected, TileContent } from '@/pages/platform/admin/components/StructureTiles';
 import type { Headquarters, Paging } from '@/pages/platform/admin/components/StructureTiles';
 
 /**
@@ -8,7 +9,18 @@ import type { Headquarters, Paging } from '@/pages/platform/admin/components/Str
  * People are listed by name with a chat button; the details of a clicked person appear on the right.
  * The data comes from the tree endpoint (administrator, manager and employee only).
  */
-export default function HeadquartersTree({ type }: { type: 'shops' | 'warehouses' }) {
+export default function HeadquartersTree({
+    url,
+    type,
+    content = 'all',
+    onSelect,
+}: {
+    url: string;
+    type: 'shops' | 'warehouses' | 'mine';
+    content?: TileContent;
+    /** Called with what the person clicks in the list (a person, a unit) or null when it is cleared */
+    onSelect?: (selected: Selected | null) => void;
+}) {
     const [page, setPage] = useState(1);
     const [result, setResult] = useState<Paging<Headquarters> | null>(null);
     const [error, setError] = useState(false);
@@ -16,7 +28,7 @@ export default function HeadquartersTree({ type }: { type: 'shops' | 'warehouses
 
     const load = useCallback(async () => {
         try {
-            const response = await fetch(`/platform/headquarters/${type}/tree?${new URLSearchParams({ page: String(page), ...(search ? { q: search } : {}) })}`, {
+            const response = await fetch(`${url}?${new URLSearchParams({ page: String(page), ...(search ? { q: search } : {}) })}`, {
                 credentials: 'same-origin',
                 headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
             });
@@ -30,7 +42,7 @@ export default function HeadquartersTree({ type }: { type: 'shops' | 'warehouses
         } catch {
             setError(true);
         }
-    }, [type, page, search]);
+    }, [url, page, search]);
 
     useEffect(() => {
         void load();
@@ -42,21 +54,27 @@ export default function HeadquartersTree({ type }: { type: 'shops' | 'warehouses
     }, []);
 
     return (
-        <StructureLayout>
-            <SearchBox onSearch={changeSearch} />
+        <StructureLayout onSelect={onSelect}>
+            {type !== 'mine' && <SearchBox onSearch={changeSearch} />}
 
             {error && <p className="text-sm text-[#dc3545]">Nie udało się pobrać danych.</p>}
             {!error && result === null && <p className="text-sm text-[#6c757d]">Ładowanie…</p>}
             {result && result.data.length === 0 && (
                 <p className="text-sm text-[#6c757d]">
-                    {search ? 'Nic nie znaleziono.' : type === 'shops' ? 'Brak siedzib sklepów.' : 'Brak siedzib hurtowni.'}
+                    {search
+                        ? 'Nic nie znaleziono.'
+                        : type === 'shops'
+                          ? 'Brak siedzib sklepów.'
+                          : type === 'warehouses'
+                            ? 'Brak siedzib hurtowni.'
+                            : 'Siedziba nie została jeszcze założona.'}
                 </p>
             )}
 
             {result && result.data.length > 0 && (
                 <TileGrid>
                     {result.data.map((headquarters) => (
-                        <HeadquartersTile key={headquarters.id} headquarters={headquarters} />
+                        <HeadquartersTile key={headquarters.id} headquarters={headquarters} content={content} />
                     ))}
                 </TileGrid>
             )}

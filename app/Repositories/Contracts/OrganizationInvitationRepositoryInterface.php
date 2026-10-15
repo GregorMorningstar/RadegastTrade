@@ -61,5 +61,19 @@ interface OrganizationInvitationRepositoryInterface
      *
      * @return array{0: OrganizationInvitation, 1: string}
      */
+    /**
+     * Pending invitations to create a new branch anywhere in the organization (every headquarters of the type the
+     * leader role belongs to), with the headquarters loaded.
+     *
+     * @return Collection<int, OrganizationInvitation>
+     */
+    public function pendingNewBranchesOfOrganization(Organization $organization, UserRole $leaderRole): Collection;
+
+    /**
+     * Whether the user has an accepted invitation that has not produced a headquarters yet (they still have to
+     * create it). A manager detached from a headquarters has none, so they cannot found a new one.
+     */
+    public function hasAcceptedWithoutHeadquarters(User $user): bool;
+
     public function issue(Organization $organization, string $email, User $inviter, UserRole $role, ShopHeadquarter|WarehouseHeadquarter|null $headquarter = null, ?string $phone = null, ShopBranch|WarehouseBranch|null $branch = null): array;
 }

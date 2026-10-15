@@ -1,7 +1,8 @@
 import { Head, useForm } from '@inertiajs/react';
 import { Lock, Search } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
+import { clearAutofilled, mergeLookup, newNipAutofill } from '@/lib/nip-autofill';
 
 type Props = {
     /** Adres e-mail właściciela z zaproszenia (tylko do odczytu) */
@@ -74,6 +75,14 @@ export default function OrganizationSetup({ email }: Props) {
         message: string | null;
         error: boolean;
     }>({ loading: false, message: null, error: false });
+    // which fields the register lookup filled in, and whether the previous NIP was wrong
+    const autofill = useRef(newNipAutofill());
+
+    // wrong NIP: the fields filled in from the earlier lookup are emptied
+    const rejectNip = (message: string) => {
+        form.setData((data) => clearAutofilled(data, autofill.current));
+        setLookup({ loading: false, message, error: true });
+    };
 
     // Pobiera dane firmy z rejestru MF po NIP i wstrzykuje je w pola formularza.
     // Nazwę uzupełnia tylko wtedy, gdy pole jest puste; e-mail zostaje bez zmian.
@@ -81,7 +90,7 @@ export default function OrganizationSetup({ email }: Props) {
         const nip = form.data.NIP.replace(/\D/g, '');
 
         if (nip.length !== 10) {
-            setLookup({ loading: false, message: 'Podaj 10-cyfrowy NIP.', error: true });
+            rejectNip('Podaj 10-cyfrowy NIP.');
 
             return;
         }
@@ -99,26 +108,27 @@ export default function OrganizationSetup({ email }: Props) {
             const result: NipResult = await response.json();
 
             if (!response.ok || !result.ok) {
-                setLookup({
-                    loading: false,
-                    message: result.error ?? 'Nie udało się pobrać danych.',
-                    error: true,
-                });
+                rejectNip(result.error ?? 'Nie udało się pobrać danych.');
 
                 return;
             }
 
             form.setData((data) => ({
-                ...data,
+                ...mergeLookup(
+                    data,
+                    {
+                        // the name from the register is only a suggestion in an empty field (or after a wrong NIP)
+                        name: result.name,
+                        REGON: result.regon,
+                        street: result.street,
+                        building_number: result.building_number,
+                        apartment_number: result.apartment_number,
+                        postal_code: result.zip,
+                        city: result.city,
+                    },
+                    autofill.current,
+                ),
                 NIP: nip,
-                REGON: result.regon ?? data.REGON,
-                street: result.street ?? data.street,
-                building_number: result.building_number ?? data.building_number,
-                apartment_number: result.apartment_number ?? data.apartment_number,
-                postal_code: result.zip ?? data.postal_code,
-                city: result.city ?? data.city,
-                // nazwa z rejestru tylko jako podpowiedź w pustym polu
-                name: data.name || (result.name ?? ''),
             }));
 
             setLookup({

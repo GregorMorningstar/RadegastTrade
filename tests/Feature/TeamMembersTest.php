@@ -170,7 +170,7 @@ test('telefon z zaproszenia trafia do konta po przyjęciu zaproszenia', function
         ->and($user->role)->toBe(UserRole::SHOP_OWNER);
 });
 
-test('rejestracja z zaproszenia dostaje telefon z zaproszenia, a telefon z formularza nie zmienia konta', function () {
+test('rejestracja z zaproszenia zapisuje telefon z formularza (podpowiedziany z zaproszenia)', function () {
     $f = teamFixture();
     [$invitation, $code] = OrganizationInvitation::issue($f['org'], 'nowy@example.com', $f['owner'], UserRole::SHOP_OWNER, null, '+48501502503');
 
@@ -188,5 +188,5 @@ test('rejestracja z zaproszenia dostaje telefon z zaproszenia, a telefon z formu
         'organization_invitation' => $invitation->code, 'invitation_key' => $code,
     ]);
 
-    expect(User::where('email', 'nowy@example.com')->first()->phone)->toBe('+48501502503');
+    expect(User::where('email', 'nowy@example.com')->first()->phone)->toBe('+48999999999');
 });

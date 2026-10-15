@@ -200,3 +200,65 @@ test('strony sklepów i hurtowni z drzewem są dostępne dla administratora', fu
     $this->actingAs(User::factory()->create(['role' => UserRole::Manager]))
         ->get('/platform/admin/shops/my-headquarters')->assertForbidden();
 });
+
+test('właściciel organizacji widzi drzewo siedzib tylko swojej organizacji', function () {
+    $f = membersFixture();
+    $owner = User::where('organization_id', $f['org']->id)->where('role', UserRole::ORGANIZATION_OWNER)->first();
+
+    $this->actingAs($owner)
+        ->getJson(route('platform.organization.headquarters.tree', 'shops'))
+        ->assertOk()
+        ->assertJsonPath('total', 1)
+        ->assertJsonPath('data.0.name', 'Siedziba sklepu')
+        ->assertJsonPath('data.0.branches.0.name', 'Placówka 1')
+        ->assertJsonCount(2, 'data.0.branches.0.people')
+        ->assertJsonMissing(['name' => 'Obca siedziba'])
+        ->assertJsonMissing(['name' => 'Obcy kierownik']);
+
+    $this->getJson(route('platform.organization.headquarters.tree', ['type' => 'warehouses', 'q' => 'Magazynier']))
+        ->assertJsonPath('total', 1)
+        ->assertJsonPath('data.0.name', 'Hurtownia główna');
+
+    // someone else's organization cannot be requested: the organization comes from the account
+    $this->getJson(route('platform.organization.headquarters.tree', ['type' => 'shops', 'q' => 'Obcy']))
+        ->assertJsonPath('total', 0);
+});
+
+test('drzewo siedzib organizacji jest zamknięte dla innych ról', function (UserRole $role) {
+    $f = membersFixture();
+
+    $this->actingAs(User::factory()->create(['role' => $role, 'organization_id' => $f['org']->id]))
+        ->getJson(route('platform.organization.headquarters.tree', 'shops'))
+        ->assertForbidden();
+})->with([UserRole::Admin, UserRole::Manager, UserRole::Employee, UserRole::SHOP_OWNER, UserRole::SHOP_LEADER, UserRole::WAREHOUSE_OWNER]);
+
+test('kierownik siedziby widzi tylko swoją siedzibę z placówkami i osobami', function (string $group, string $role) {
+    $f = membersFixture();
+    $manager = User::where('role', $role)->where('organization_id', $f['org']->id)->first();
+
+    $this->actingAs($manager)->get(route("$group.owner.structure"))->assertOk()
+        ->assertInertia(fn ($page) => $page->component(($group === 'shop' ? 'platform/shop' : 'platform/warehouses').'/owner/structure/index'));
+
+    $response = $this->getJson(route("$group.owner.structure.data"))->assertOk()
+        ->assertJsonPath('total', 1)
+        ->assertJsonMissing(['name' => 'Obca siedziba'])
+        ->assertJsonMissing(['name' => 'Obcy kierownik']);
+
+    expect($response->json('data.0.organization'))->toBe('Org');
+})->with([
+    'sklep' => ['shop', UserRole::SHOP_OWNER->value],
+    'hurtownia' => ['warehouse', UserRole::WAREHOUSE_OWNER->value],
+]);
+
+test('kierownik bez założonej siedziby widzi puste drzewo, a inne role nie mają dostępu', function () {
+    $f = membersFixture();
+    $fresh = User::factory()->create(['role' => UserRole::SHOP_OWNER, 'organization_id' => $f['org']->id]);
+
+    $this->actingAs($fresh)->getJson(route('shop.owner.structure.data'))->assertOk()->assertJsonPath('total', 0);
+
+    $leader = User::factory()->create(['role' => UserRole::SHOP_LEADER, 'organization_id' => $f['org']->id]);
+    $this->actingAs($leader)->getJson('/shop/owner/structure/data')->assertForbidden();
+
+    $owner = User::where('role', UserRole::ORGANIZATION_OWNER)->where('organization_id', $f['org']->id)->first();
+    $this->actingAs($owner)->getJson('/shop/owner/structure/data')->assertForbidden();
+});

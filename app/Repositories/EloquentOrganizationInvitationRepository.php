@@ -16,6 +16,18 @@ use Illuminate\Database\Eloquent\Collection;
 
 class EloquentOrganizationInvitationRepository implements OrganizationInvitationRepositoryInterface
 {
+    public function hasAcceptedWithoutHeadquarters(User $user): bool
+    {
+        return OrganizationInvitation::query()
+            ->where('organization_id', $user->organization_id)
+            ->where('role', $user->role->value)
+            ->where('email', strtolower($user->email))
+            ->whereNotNull('accepted_at')
+            ->whereNull('shop_headquarter_id')
+            ->whereNull('warehouse_headquarter_id')
+            ->exists();
+    }
+
     public function revokePendingForHeadquarter(ShopHeadquarter|WarehouseHeadquarter $headquarter, string $email, User $by): void
     {
         OrganizationInvitation::query()
@@ -47,6 +59,22 @@ class EloquentOrganizationInvitationRepository implements OrganizationInvitation
     public function pendingNewBranch(ShopHeadquarter|WarehouseHeadquarter $headquarter, UserRole $leaderRole): Collection
     {
         return $this->newBranchQuery($headquarter, $leaderRole)->where('expires_at', '>', now())->latest()->get();
+    }
+
+    public function pendingNewBranchesOfOrganization(Organization $organization, UserRole $leaderRole): Collection
+    {
+        return OrganizationInvitation::query()
+            ->where('organization_id', $organization->id)
+            ->where('role', $leaderRole->value)
+            ->where(fn (Builder $query) => $query->whereNotNull('shop_headquarter_id')->orWhereNotNull('warehouse_headquarter_id'))
+            ->whereNull('shop_branch_id')
+            ->whereNull('warehouse_branch_id')
+            ->where('is_active', true)
+            ->whereNull('accepted_at')
+            ->where('expires_at', '>', now())
+            ->with(['shopHeadquarter:id,name', 'warehouseHeadquarter:id,name'])
+            ->latest()
+            ->get();
     }
 
     public function revokePendingNewBranch(ShopHeadquarter|WarehouseHeadquarter $headquarter, UserRole $leaderRole, string $email, User $by): void

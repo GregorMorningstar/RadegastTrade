@@ -12,6 +12,7 @@ use App\Models\ShopHeadquarter;
 use App\Models\User;
 use App\Models\WarehouseHeadquarter;
 use App\Repositories\Contracts\HeadquarterRepositoryInterface;
+use App\Repositories\Contracts\OrganizationInvitationRepositoryInterface;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -27,6 +28,7 @@ class HeadquarterService implements HeadquarterServiceInterface
         private readonly HeadquarterRepositoryInterface $shops,
         private readonly HeadquarterRepositoryInterface $warehouses,
         private readonly NipServiceInterface $nipService,
+        private readonly OrganizationInvitationRepositoryInterface $invitations,
     ) {
         //
     }
@@ -109,8 +111,18 @@ class HeadquarterService implements HeadquarterServiceInterface
 
         abort_if($type === null || ! $user->organization_id, 403);
         abort_if($this->hasHeadquarter($user), 403, 'Masz już przypisaną siedzibę.');
+        // only a manager invited to found a headquarters may do it (not one detached from a headquarters)
+        abort_unless($this->invitations->hasAcceptedWithoutHeadquarters($user), 403, 'Nie masz zaproszenia do założenia siedziby.');
 
         return $type;
+    }
+
+    public function needsSetup(User $user): bool
+    {
+        return HeadquarterType::forRole($user->role) !== null
+            && $user->organization_id !== null
+            && ! $this->hasHeadquarter($user)
+            && $this->invitations->hasAcceptedWithoutHeadquarters($user);
     }
 
     public function hasHeadquarter(User $user): bool

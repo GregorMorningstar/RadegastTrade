@@ -15,23 +15,23 @@ class RoleUsersSeeder extends Seeder
      */
     public function run(): void
     {
-        foreach (UserRole::cases() as $role) {
-            $email = $role->value.'@example.pl';
+        // foreach (UserRole::cases() as $role) {
+        //     $email = $role->value.'@example.pl';
 
-            if (User::where('email', $email)->exists()) {
-                continue;
-            }
+        //     if (User::where('email', $email)->exists()) {
+        //         continue;
+        //     }
 
-            $user = User::create([
-                'name' => $role->label(),
-                'email' => $email,
-                'password' => 'qwer1234', // haszowane przez cast "hashed"
-                'role' => $role,
-            ]);
+        //     $user = User::create([
+        //         'name' => $role->label(),
+        //         'email' => $email,
+        //         'password' => 'qwer1234', // haszowane przez cast "hashed"
+        //         'role' => $role,
+        //     ]);
 
-            $user->forceFill(['email_verified_at' => now()])->save();
+        //     $user->forceFill(['email_verified_at' => now()])->save();
 
-            app(CreateTeam::class)->handle($user, $user->name."'s Team", isPersonal: true);
-        }
+        //     app(CreateTeam::class)->handle($user, $user->name."'s Team", isPersonal: true);
+        // }
     }
 }

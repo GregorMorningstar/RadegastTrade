@@ -9,6 +9,8 @@ use App\Enums\UserRole;
 use App\Models\OrganizationInvitation;
 use App\Models\TeamInvitation;
 use App\Models\User;
+use App\Support\PhoneNumber;
+use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -44,8 +46,12 @@ class CreateNewUser implements CreatesNewUsers
             ]);
         }
 
+        // the phone number is stored in the international form (+48123456789)
+        $input['phone'] = PhoneNumber::normalize($input['phone'] ?? null);
+
         Validator::make($input, [
             ...$this->profileRules(),
+            'phone' => $this->phoneRules(),
             'password' => $this->passwordRules(),
             'invitation_key' => $organizationInvitation ? ['required', 'digits:6'] : ['nullable'],
             'terms' => ['accepted'],
@@ -53,7 +59,7 @@ class CreateNewUser implements CreatesNewUsers
         ], [
             'terms.accepted' => 'Aby się zarejestrować, zaakceptuj regulamin.',
             'privacy.accepted' => 'Aby się zarejestrować, potwierdź zapoznanie się z informacją o przetwarzaniu danych (RODO).',
-        ], ['invitation_key' => 'klucz zaproszenia'])->validate();
+        ], ['invitation_key' => 'klucz zaproszenia', 'phone' => 'numer telefonu'])->validate();
 
         $invitedEmail = $organizationInvitation?->email ?? $teamInvitation->email;
 
@@ -72,7 +78,7 @@ class CreateNewUser implements CreatesNewUsers
             $user = User::create([
                 'name' => $input['name'],
                 'email' => $input['email'],
-                'phone' => $organizationInvitation?->phone,
+                'phone' => $input['phone'],
                 'password' => $input['password'],
                 // default, least privileged role, or the role from the organization invitation
                 'role' => $organizationInvitation?->role ?? UserRole::Employee,
@@ -95,6 +101,23 @@ class CreateNewUser implements CreatesNewUsers
 
             return $user;
         });
+    }
+
+    /**
+     * The phone number is required and must be well formed.
+     *
+     * @return array<int, mixed>
+     */
+    private function phoneRules(): array
+    {
+        return [
+            'required',
+            'string',
+            'max:20',
+            fn ($attribute, $value, $fail) => PhoneNumber::isValid((string) $value)
+                ? null
+                : $fail('Podaj poprawny numer telefonu: 9 cyfr albo numer międzynarodowy zaczynający się od +.'),
+        ];
     }
 
     /**

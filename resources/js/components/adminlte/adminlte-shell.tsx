@@ -4,6 +4,7 @@ import {
     ChevronRight,
     LayoutDashboard,
     LayoutGrid,
+    ListTodo,
     LogOut,
     Menu,
     MessageCircle,
@@ -101,6 +102,7 @@ export default function AdminLteShell({
             icon: LayoutDashboard,
         },
         { title: "Panel", href: base, icon: LayoutGrid },
+        { title: "Zadania", href: `${base}/tasks`, icon: ListTodo },
         ...(isAdminPanel
             ? [
                   {
@@ -146,11 +148,19 @@ export default function AdminLteShell({
                       title: "Sklepy",
                       href: `${base}/shops`,
                       icon: Store,
+                      children: [
+                          { title: "Główne sklepy", href: `${base}/shops` },
+                          { title: "Placówki sklepów", href: `${base}/shops/branches` },
+                      ],
                   },
                   {
                       title: "Hurtownie",
                       href: `${base}/warehouses`,
                       icon: Warehouse,
+                      children: [
+                          { title: "Główne hurtownie", href: `${base}/warehouses` },
+                          { title: "Placówki hurtowni", href: `${base}/warehouses/branches` },
+                      ],
                   },
                   { title: "Zespół", href: `${base}/team`, icon: Users },
               ]
@@ -185,7 +195,12 @@ export default function AdminLteShell({
                       section: "Struktura",
                       title: "Placówki",
                       href: `${base}/branches`,
-                      icon: Store,
+                      icon: base.startsWith("/warehouse") ? Warehouse : Store,
+                  },
+                  {
+                      title: "Siedziba i placówki",
+                      href: `${base}/structure`,
+                      icon: Network,
                   },
                   { title: "Zespół", href: `${base}/team`, icon: Users },
               ]
@@ -346,9 +361,14 @@ export default function AdminLteShell({
                                                     }
                                                     className={cn(
                                                         itemClass(
-                                                            isActive(
-                                                                child.href,
-                                                            ),
+                                                            // "Główne sklepy" (/shops) must not light up on /shops/branches
+                                                            isActive(child.href) &&
+                                                                !item.children?.some(
+                                                                    (other) =>
+                                                                        other.href !== child.href &&
+                                                                        other.href.startsWith(child.href) &&
+                                                                        isActive(other.href),
+                                                                ),
                                                         ),
                                                         "ml-6 gap-2 py-1.5",
                                                     )}

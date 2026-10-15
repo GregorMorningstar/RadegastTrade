@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Services\Contracts\TeamMembersServiceInterface;
+use App\Services\Contracts\UnitMembershipServiceInterface;
 use App\Enums\HeadquarterType;
 use App\Enums\UserRole;
 use App\Models\OrganizationInvitation;
@@ -16,6 +17,11 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
  */
 class TeamMembersService implements TeamMembersServiceInterface
 {
+    public function __construct(private readonly UnitMembershipServiceInterface $memberships)
+    {
+        //
+    }
+
     /**
      * Role order in the listing: from the organizer to the workers.
      *
@@ -40,7 +46,7 @@ class TeamMembersService implements TeamMembersServiceInterface
     {
         abort_unless($owner->role === UserRole::ORGANIZATION_OWNER && $owner->organization_id, 403);
 
-        return $this->collect($owner->organization_id, null);
+        return $this->collect($owner->organization_id, null, $owner);
     }
 
     /**
@@ -55,18 +61,18 @@ class TeamMembersService implements TeamMembersServiceInterface
 
         abort_unless($type !== null && $manager->organization_id && $manager->{$type->headquarterColumn()}, 403);
 
-        return $this->collect($manager->organization_id, [$type, (int) $manager->{$type->headquarterColumn()}]);
+        return $this->collect($manager->organization_id, [$type, (int) $manager->{$type->headquarterColumn()}], $manager);
     }
 
     /**
      * @param  array{0: HeadquarterType, 1: int}|null  $headquarter  narrows to one headquarters (and the organizer)
      * @return list<array<string, mixed>>
      */
-    private function collect(int $organizationId, ?array $headquarter): array
+    private function collect(int $organizationId, ?array $headquarter, User $viewer): array
     {
         $users = User::query()
             ->where('organization_id', $organizationId)
-            ->with(['shopHeadquarter:id,name', 'warehouseHeadquarter:id,name', 'shopBranch:id,name', 'warehouseBranch:id,name'])
+            ->with(['shopHeadquarter:id,name', 'warehouseHeadquarter:id,name', 'shopBranch:id,name', 'warehouseBranch:id,name', 'deactivatedBy:id,name'])
             ->get()
             ->filter(fn (User $user) => $headquarter === null
                 || $user->role === UserRole::ORGANIZATION_OWNER
@@ -82,7 +88,7 @@ class TeamMembersService implements TeamMembersServiceInterface
             ->filter(fn (OrganizationInvitation $invitation) => $headquarter === null
                 || $invitation->{$headquarter[0]->headquarterColumn()} === $headquarter[1]);
 
-        return $this->rows($users, $invitations);
+        return $this->rows($users, $invitations, $viewer);
     }
 
     /**
@@ -107,7 +113,7 @@ class TeamMembersService implements TeamMembersServiceInterface
             ->where('organization_id', $member->organization_id)
             ->where($branchColumn, $branchId)
             ->whereIn('role', [$type->leaderRole()->value, $type->workerRole()->value])
-            ->with(['shopBranch:id,name', 'warehouseBranch:id,name'])
+            ->with(['shopBranch:id,name', 'warehouseBranch:id,name', 'deactivatedBy:id,name'])
             ->get();
 
         $invitations = $member->role === $type->leaderRole()
@@ -122,7 +128,7 @@ class TeamMembersService implements TeamMembersServiceInterface
                 ->get()
             : new EloquentCollection;
 
-        return $this->rows($users, $invitations);
+        return $this->rows($users, $invitations, $member);
     }
 
     /**
@@ -130,7 +136,7 @@ class TeamMembersService implements TeamMembersServiceInterface
      * @param  iterable<OrganizationInvitation>  $invitations
      * @return list<array<string, mixed>>
      */
-    private function rows(iterable $users, iterable $invitations): array
+    private function rows(iterable $users, iterable $invitations, User $viewer): array
     {
         return collect()
             ->merge(collect($users)->map(fn (User $user) => [
@@ -141,10 +147,13 @@ class TeamMembersService implements TeamMembersServiceInterface
                 'role' => $user->role->label(),
                 'roleValue' => $user->role->value,
                 'unit' => $this->userUnit($user),
-                'status' => 'active',
-                'detail' => $user->last_login_local
-                    ? 'ostatnie logowanie '.$user->last_login_local->format('d.m.Y H:i')
-                    : null,
+                'userId' => $user->id,
+                // the active switch: who may use it and what the account's state is
+                'canToggle' => $this->memberships->canSetActive($viewer, $user),
+                'status' => $user->is_active === false ? 'inactive' : 'active',
+                'detail' => $user->is_active === false
+                    ? 'wyłączone'.($user->deactivatedBy ? ' przez '.$user->deactivatedBy->name : '').($user->deactivated_at ? ' dnia '.$user->deactivated_at->format('d.m.Y H:i') : '')
+                    : ($user->last_login_local ? 'ostatnie logowanie '.$user->last_login_local->format('d.m.Y H:i') : null),
                 '_order' => $this->order($user->role),
             ]))
             ->merge(collect($invitations)->map(fn (OrganizationInvitation $invitation) => [

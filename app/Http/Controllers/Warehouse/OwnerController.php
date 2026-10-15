@@ -11,23 +11,21 @@ use Inertia\Response;
 
 class OwnerController extends Controller
 {
-    public function index(Request $request): Response|RedirectResponse
+    public function index(Request $request, HeadquarterServiceInterface $service): Response|RedirectResponse
     {
-        return $this->withHeadquarter($request) ?? Inertia::render('platform/warehouses/owner/index');
+        return $this->withHeadquarter($request, $service) ?? Inertia::render('platform/warehouses/owner/index');
     }
 
     public function dashboard(Request $request, HeadquarterServiceInterface $service): Response|RedirectResponse
     {
-        return $this->withHeadquarter($request) ?? Inertia::render('platform/warehouses/owner/dashboard/index', $service->dashboardData($request->user()));
+        return $this->withHeadquarter($request, $service) ?? Inertia::render('platform/warehouses/owner/dashboard/index', $service->dashboardData($request->user()));
     }
 
     /**
      * An invited manager (an account with an organization) without a headquarters first fills in its details.
      */
-    private function withHeadquarter(Request $request): ?RedirectResponse
+    private function withHeadquarter(Request $request, HeadquarterServiceInterface $service): ?RedirectResponse
     {
-        $user = $request->user();
-
-        return (! $user->organization_id || $user->warehouse_headquarter_id) ? null : to_route('warehouse.owner.setup');
+        return $service->needsSetup($request->user()) ? to_route('warehouse.owner.setup') : null;
     }
 }

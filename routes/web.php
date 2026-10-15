@@ -1,13 +1,19 @@
 <?php
 
 use App\Http\Controllers\AcceptOrganizationInvitationController;
+use App\Http\Controllers\AccountInactiveController;
+use App\Http\Controllers\AccountPendingController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\BranchLeaderController;
 use App\Http\Controllers\BranchSetupController;
 use App\Http\Controllers\BranchWorkerController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\HeadquarterBranchController;
 use App\Http\Controllers\HeadquarterSetupController;
+use App\Http\Controllers\HeadquarterStructureController;
+use App\Http\Controllers\TaskController;
 use App\Http\Controllers\TeamMembersController;
+use App\Http\Controllers\UnitMembershipController;
 use App\Http\Controllers\Platform;
 use App\Http\Controllers\Shop;
 use App\Http\Controllers\Teams\TeamInvitationController;
@@ -46,15 +52,12 @@ Route::prefix('platform')
         Route::prefix('admin')->name('admin.')->middleware('role:admin')->group(function () {
             Route::get('/', [Platform\AdminController::class, 'index'])->name('index');
             Route::get('dashboard', [Platform\AdminController::class, 'dashboard'])->name('dashboard');
+            Route::get('tasks', [TaskController::class, 'index'])->name('tasks.index');
 
             Route::get('organizations', [Platform\Admin\OrganizationController::class, 'index'])->name('organizations.index');
-            Route::get('organizations/create', [Platform\Admin\OrganizationController::class, 'create'])->name('organizations.create');
             Route::post('organizations/invitations', [Platform\Admin\OrganizationInvitationController::class, 'storeNew'])
                 ->middleware('throttle:20,1')
                 ->name('organizations.invitations.store-new');
-            Route::post('organizations/{organization}/invitations', [Platform\Admin\OrganizationInvitationController::class, 'store'])
-                ->middleware('throttle:20,1')
-                ->name('organizations.invitations.store');
             Route::delete('organizations/invitations/{invitation:id}', [Platform\Admin\OrganizationInvitationController::class, 'destroy'])
                 ->name('organizations.invitations.destroy');
 
@@ -71,20 +74,11 @@ Route::prefix('platform')
             });
         });
 
-        Route::prefix('manager')->name('manager.')->middleware('role:manager')->group(function () {
-            Route::get('/', [Platform\ManagerController::class, 'index'])->name('index');
-            Route::get('dashboard', [Platform\ManagerController::class, 'dashboard'])->name('dashboard');
-        });
-
-        Route::prefix('employee')->name('employee.')->middleware('role:employee')->group(function () {
-            Route::get('/', [Platform\EmployeeController::class, 'index'])->name('index');
-            Route::get('dashboard', [Platform\EmployeeController::class, 'dashboard'])->name('dashboard');
-        });
-
         // Organization owner (invited by the administrator)
         Route::prefix('organization')->name('organization.')->middleware('role:organization_owner')->group(function () {
             Route::get('/', [Platform\OrganizationOwnerController::class, 'index'])->name('index');
             Route::get('dashboard', [Platform\OrganizationOwnerController::class, 'dashboard'])->name('dashboard');
+            Route::get('tasks', [TaskController::class, 'index'])->name('tasks.index');
             Route::get('nip-lookup', [Platform\OrganizationOwnerController::class, 'nipLookup'])
                 ->middleware('throttle:20,1')
                 ->name('nip-lookup');
@@ -93,6 +87,39 @@ Route::prefix('platform')
             Route::post('setup', [Platform\OrganizationOwnerController::class, 'storeSetup'])->name('setup.store');
 
             // Shop (shops) and warehouse (warehouses) headquarters and the invitations of their managers
+            Route::get('{type}/{headquarter}/manager-candidates', [Platform\Organization\HeadquarterManagerController::class, 'candidates'])
+                ->whereIn('type', ['shops', 'warehouses'])
+                ->whereNumber('headquarter')
+                ->middleware('throttle:120,1')
+                ->name('headquarters.manager.candidates');
+            Route::post('{type}/{headquarter}/manager', [Platform\Organization\HeadquarterManagerController::class, 'assign'])
+                ->whereIn('type', ['shops', 'warehouses'])
+                ->whereNumber('headquarter')
+                ->middleware('throttle:20,1')
+                ->name('headquarters.manager.assign');
+            Route::delete('{type}/{headquarter}/manager/{user}', [Platform\Organization\HeadquarterManagerController::class, 'remove'])
+                ->whereIn('type', ['shops', 'warehouses'])
+                ->whereNumber(['headquarter', 'user'])
+                ->middleware('throttle:20,1')
+                ->name('headquarters.manager.remove');
+            Route::patch('{type}/{headquarter}/manager/{user}/role', [Platform\Organization\HeadquarterManagerController::class, 'demote'])
+                ->whereIn('type', ['shops', 'warehouses'])
+                ->whereNumber(['headquarter', 'user'])
+                ->middleware('throttle:20,1')
+                ->name('headquarters.manager.demote');
+            // Branches of the shops / warehouses: the owner invites the leader of a new branch in any headquarters
+            Route::get('{type}/branches', [Platform\Organization\BranchController::class, 'index'])
+                ->whereIn('type', ['shops', 'warehouses'])
+                ->name('branches.index');
+            Route::post('{type}/{headquarter}/branches/invitations', [Platform\Organization\BranchController::class, 'invite'])
+                ->whereIn('type', ['shops', 'warehouses'])
+                ->whereNumber('headquarter')
+                ->middleware('throttle:20,1')
+                ->name('branches.invitations.store');
+            Route::get('{type}/tree', Platform\Organization\HeadquartersTreeController::class)
+                ->whereIn('type', ['shops', 'warehouses'])
+                ->middleware('throttle:120,1')
+                ->name('headquarters.tree');
             Route::get('{type}', [Platform\Organization\HeadquarterController::class, 'index'])
                 ->whereIn('type', ['shops', 'warehouses'])
                 ->name('headquarters.index');
@@ -110,6 +137,12 @@ Route::prefix('platform')
         });
     });
 
+// Switching a person's account on or off (the organization owner of their organization)
+Route::patch('memberships/people/{user}/active', [UnitMembershipController::class, 'active'])
+    ->middleware(['auth', 'verified', 'throttle:30,1'])
+    ->whereNumber('user')
+    ->name('memberships.active');
+
 // Hurtownia: owner, leader, worker
 Route::prefix('warehouse')
     ->name('warehouse.')
@@ -120,6 +153,16 @@ Route::prefix('warehouse')
             Route::post('setup', [HeadquarterSetupController::class, 'store'])->name('setup.store');
             Route::get('nip-lookup', [HeadquarterSetupController::class, 'nipLookup'])->middleware('throttle:20,1')->name('nip-lookup');
             Route::get('team', TeamMembersController::class)->name('team');
+            Route::get('branches/{branch}/leaders/candidates', [BranchLeaderController::class, 'candidates'])
+                ->whereNumber('branch')->middleware('throttle:120,1')->name('branches.leaders.candidates');
+            Route::post('branches/{branch}/leaders', [BranchLeaderController::class, 'assign'])
+                ->whereNumber('branch')->middleware('throttle:20,1')->name('branches.leaders.assign');
+            Route::delete('branches/{branch}/leaders/{user}', [BranchLeaderController::class, 'remove'])
+                ->whereNumber(['branch', 'user'])->middleware('throttle:20,1')->name('branches.leaders.remove');
+            Route::patch('branches/{branch}/leaders/{user}/role', [BranchLeaderController::class, 'demote'])
+                ->whereNumber(['branch', 'user'])->middleware('throttle:20,1')->name('branches.leaders.demote');
+            Route::get('structure', [HeadquarterStructureController::class, 'show'])->name('structure');
+            Route::get('structure/data', [HeadquarterStructureController::class, 'data'])->middleware('throttle:120,1')->name('structure.data');
             Route::get('branches', [HeadquarterBranchController::class, 'index'])->name('branches.index');
             Route::post('branches/invitations', [HeadquarterBranchController::class, 'invite'])
                 ->middleware('throttle:20,1')
@@ -128,6 +171,7 @@ Route::prefix('warehouse')
                 ->name('branches.invitations.destroy');
             Route::get('/', [Warehouse\OwnerController::class, 'index'])->name('index');
             Route::get('dashboard', [Warehouse\OwnerController::class, 'dashboard'])->name('dashboard');
+            Route::get('tasks', [TaskController::class, 'index'])->name('tasks.index');
         });
 
         Route::prefix('leader')->name('leader.')->middleware('role:warehouse_leader')->group(function () {
@@ -143,12 +187,14 @@ Route::prefix('warehouse')
             Route::get('nip-lookup', [BranchSetupController::class, 'nipLookup'])->middleware('throttle:20,1')->name('nip-lookup');
             Route::get('/', [Warehouse\LeaderController::class, 'index'])->name('index');
             Route::get('dashboard', [Warehouse\LeaderController::class, 'dashboard'])->name('dashboard');
+            Route::get('tasks', [TaskController::class, 'index'])->name('tasks.index');
         });
 
         Route::prefix('worker')->name('worker.')->middleware('role:warehouse_worker')->group(function () {
             Route::get('team', TeamMembersController::class)->name('team');
             Route::get('/', [Warehouse\WorkerController::class, 'index'])->name('index');
             Route::get('dashboard', [Warehouse\WorkerController::class, 'dashboard'])->name('dashboard');
+            Route::get('tasks', [TaskController::class, 'index'])->name('tasks.index');
         });
     });
 
@@ -162,6 +208,16 @@ Route::prefix('shop')
             Route::post('setup', [HeadquarterSetupController::class, 'store'])->name('setup.store');
             Route::get('nip-lookup', [HeadquarterSetupController::class, 'nipLookup'])->middleware('throttle:20,1')->name('nip-lookup');
             Route::get('team', TeamMembersController::class)->name('team');
+            Route::get('branches/{branch}/leaders/candidates', [BranchLeaderController::class, 'candidates'])
+                ->whereNumber('branch')->middleware('throttle:120,1')->name('branches.leaders.candidates');
+            Route::post('branches/{branch}/leaders', [BranchLeaderController::class, 'assign'])
+                ->whereNumber('branch')->middleware('throttle:20,1')->name('branches.leaders.assign');
+            Route::delete('branches/{branch}/leaders/{user}', [BranchLeaderController::class, 'remove'])
+                ->whereNumber(['branch', 'user'])->middleware('throttle:20,1')->name('branches.leaders.remove');
+            Route::patch('branches/{branch}/leaders/{user}/role', [BranchLeaderController::class, 'demote'])
+                ->whereNumber(['branch', 'user'])->middleware('throttle:20,1')->name('branches.leaders.demote');
+            Route::get('structure', [HeadquarterStructureController::class, 'show'])->name('structure');
+            Route::get('structure/data', [HeadquarterStructureController::class, 'data'])->middleware('throttle:120,1')->name('structure.data');
             Route::get('branches', [HeadquarterBranchController::class, 'index'])->name('branches.index');
             Route::post('branches/invitations', [HeadquarterBranchController::class, 'invite'])
                 ->middleware('throttle:20,1')
@@ -170,6 +226,7 @@ Route::prefix('shop')
                 ->name('branches.invitations.destroy');
             Route::get('/', [Shop\OwnerController::class, 'index'])->name('index');
             Route::get('dashboard', [Shop\OwnerController::class, 'dashboard'])->name('dashboard');
+            Route::get('tasks', [TaskController::class, 'index'])->name('tasks.index');
         });
 
         Route::prefix('leader')->name('leader.')->middleware('role:shop_leader')->group(function () {
@@ -185,12 +242,14 @@ Route::prefix('shop')
             Route::get('nip-lookup', [BranchSetupController::class, 'nipLookup'])->middleware('throttle:20,1')->name('nip-lookup');
             Route::get('/', [Shop\LeaderController::class, 'index'])->name('index');
             Route::get('dashboard', [Shop\LeaderController::class, 'dashboard'])->name('dashboard');
+            Route::get('tasks', [TaskController::class, 'index'])->name('tasks.index');
         });
 
         Route::prefix('worker')->name('worker.')->middleware('role:shop_worker')->group(function () {
             Route::get('team', TeamMembersController::class)->name('team');
             Route::get('/', [Shop\WorkerController::class, 'index'])->name('index');
             Route::get('dashboard', [Shop\WorkerController::class, 'dashboard'])->name('dashboard');
+            Route::get('tasks', [TaskController::class, 'index'])->name('tasks.index');
         });
     });
 
@@ -211,6 +270,12 @@ Route::middleware(['auth'])->group(function () {
     Route::post('invitations/{invitation}/accept', [TeamInvitationController::class, 'accept'])->name('invitations.accept');
     Route::delete('invitations/{invitation}', [TeamInvitationController::class, 'decline'])->name('invitations.decline');
 });
+
+// The page of an account that has no panel (no role in the invitation chain yet): it waits for an invitation
+Route::get('account/pending', AccountPendingController::class)->middleware('auth')->name('account.pending');
+
+// The page of a deactivated account: who switched it off and when, and the chat with that person
+Route::get('account/inactive', AccountInactiveController::class)->middleware('auth')->name('account.inactive');
 
 // Chat: only people from the same organization (checked by ChatService)
 Route::middleware(['auth', 'verified'])->prefix('chat')->name('chat.')->group(function () {

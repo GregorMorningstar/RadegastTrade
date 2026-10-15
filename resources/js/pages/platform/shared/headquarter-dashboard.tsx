@@ -54,6 +54,7 @@ export default function HeadquarterDashboard({
                 crumbs={[
                     { label: 'Panel', href: `/${group}/owner` },
                     { label: 'Dashboard' },
+                    
                 ]}
             />
 

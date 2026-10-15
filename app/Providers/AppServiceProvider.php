@@ -3,10 +3,26 @@
 namespace App\Providers;
 
 use App\Repositories\Contracts\BranchRepositoryInterface;
+use App\Repositories\Contracts\HeadquarterManagerRepositoryInterface;
 use App\Repositories\Contracts\HeadquarterRepositoryInterface;
+use App\Repositories\Contracts\NipRegistryRepositoryInterface;
 use App\Repositories\Contracts\OrganizationInvitationRepositoryInterface;
 use App\Repositories\Contracts\OrganizationMemberRepositoryInterface;
+use App\Repositories\Contracts\TaskRepositoryInterface;
+use App\Repositories\Contracts\UnitMembershipRepositoryInterface;
+use App\Repositories\EloquentHeadquarterManagerRepository;
 use App\Repositories\EloquentOrganizationInvitationRepository;
+use App\Repositories\EloquentTaskRepository;
+use App\Repositories\EloquentUnitMembershipRepository;
+use App\Services\Contracts\TaskServiceInterface;
+use App\Services\TaskService;
+use App\Services\Contracts\UnitMembershipServiceInterface;
+use App\Services\UnitMembershipService;
+use App\Services\Contracts\HeadquarterManagerServiceInterface;
+use App\Services\HeadquarterManagerService;
+use App\Repositories\MfNipRegistryRepository;
+use App\Services\Contracts\NipVerificationServiceInterface;
+use App\Services\NipVerificationService;
 use App\Repositories\EloquentOrganizationMemberRepository;
 use App\Services\Contracts\OrganizationMembersServiceInterface;
 use App\Services\OrganizationMembersService;
@@ -53,15 +69,25 @@ class AppServiceProvider extends ServiceProvider
             $app->make(WarehouseBranchRepository::class),
             $app->make(OrganizationInvitationRepositoryInterface::class),
             $app->make(NipServiceInterface::class),
+            $app->make(HeadquarterServiceInterface::class),
         ));
         $this->app->bind(HeadquarterService::class, fn ($app) => new HeadquarterService(
             $app->make(ShopHeadquarterRepository::class),
             $app->make(WarehouseHeadquarterRepository::class),
             $app->make(NipServiceInterface::class),
+            $app->make(OrganizationInvitationRepositoryInterface::class),
         ));
 
         $this->app->bind(OrganizationMemberRepositoryInterface::class, EloquentOrganizationMemberRepository::class);
         $this->app->bind(OrganizationMembersServiceInterface::class, OrganizationMembersService::class);
+        $this->app->bind(NipRegistryRepositoryInterface::class, MfNipRegistryRepository::class);
+        $this->app->bind(NipVerificationServiceInterface::class, NipVerificationService::class);
+        $this->app->bind(HeadquarterManagerRepositoryInterface::class, EloquentHeadquarterManagerRepository::class);
+        $this->app->bind(HeadquarterManagerServiceInterface::class, HeadquarterManagerService::class);
+        $this->app->bind(UnitMembershipRepositoryInterface::class, EloquentUnitMembershipRepository::class);
+        $this->app->bind(UnitMembershipServiceInterface::class, UnitMembershipService::class);
+        $this->app->bind(TaskRepositoryInterface::class, EloquentTaskRepository::class);
+        $this->app->bind(TaskServiceInterface::class, TaskService::class);
         $this->app->bind(BranchServiceInterface::class, BranchService::class);
         $this->app->bind(BranchWorkerServiceInterface::class, BranchWorkerService::class);
         $this->app->bind(ChatServiceInterface::class, ChatService::class);

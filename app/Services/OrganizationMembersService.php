@@ -55,6 +55,32 @@ class OrganizationMembersService implements OrganizationMembersServiceInterface
         return $search === '' ? null : mb_substr($search, 0, 100);
     }
 
+    public function organizationHeadquarters(User $owner, HeadquarterType $type, ?string $search = null, int $perPage = 5): array
+    {
+        abort_unless($owner->role === UserRole::ORGANIZATION_OWNER && $owner->organization_id !== null, 403);
+
+        return $this->headquartersPage(
+            $this->members->paginateHeadquarters($owner->organization_id, $type, $this->perPage($perPage), $this->search($search)),
+        );
+    }
+
+    public function ownHeadquarters(User $manager): array
+    {
+        $type = HeadquarterType::forRole($manager->role);
+        abort_if($type === null || $manager->organization_id === null, 403);
+
+        $headquarterId = $manager->{$type->headquarterColumn()};
+
+        // a manager who has not created the headquarters yet sees an empty tree
+        if ($headquarterId === null) {
+            return ['data' => [], 'current_page' => 1, 'last_page' => 1, 'total' => 0];
+        }
+
+        return $this->headquartersPage(
+            $this->members->paginateHeadquarters($manager->organization_id, $type, 1, null, $headquarterId),
+        );
+    }
+
     private function authorize(User $viewer): void
     {
         abort_unless(in_array($viewer->role, self::VIEWERS, true), 403);
@@ -121,6 +147,8 @@ class OrganizationMembersService implements OrganizationMembersServiceInterface
             'phone' => $user->phone,
             'barcode' => $user->barcode,
             'role' => $user->role->label(),
+            'role_value' => $user->role->value,
+            'is_active' => $user->is_active !== false,
         ])->values()->all();
     }
 }

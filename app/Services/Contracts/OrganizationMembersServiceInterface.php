@@ -29,4 +29,20 @@ interface OrganizationMembersServiceInterface
      * @return array{data: list<array<string, mixed>>, current_page: int, last_page: int, total: int}
      */
     public function headquarters(User $viewer, HeadquarterType $type, ?string $search = null, int $perPage = 5): array;
+
+    /**
+     * The same tree for the owner of an organization: only the headquarters of their own organization
+     * (taken from their account, never from the request). Other roles get 403.
+     *
+     * @return array{data: list<array<string, mixed>>, current_page: int, last_page: int, total: int}
+     */
+    public function organizationHeadquarters(User $owner, HeadquarterType $type, ?string $search = null, int $perPage = 5): array;
+
+    /**
+     * The tree of the manager's own headquarters (its contact, people, branches and their people). Only shop and
+     * warehouse headquarters managers may call it, and only for the headquarters (and organization) of their account.
+     *
+     * @return array{data: list<array<string, mixed>>, current_page: int, last_page: int, total: int}
+     */
+    public function ownHeadquarters(User $manager): array;
 }

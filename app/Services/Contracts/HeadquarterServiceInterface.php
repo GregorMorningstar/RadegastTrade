@@ -40,6 +40,12 @@ interface HeadquarterServiceInterface
     public function hasHeadquarter(User $user): bool;
 
     /**
+     * Whether the invited manager still has to found the headquarters: an account with an organization and no
+     * headquarters that has an accepted invitation which did not produce one yet.
+     */
+    public function needsSetup(User $user): bool;
+
+    /**
      * Creates the headquarters for the invited manager: organization_id comes from their account,
      * i.e. from the accepted invitation (foreign key), not from the form.
      *

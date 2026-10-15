@@ -44,6 +44,20 @@ interface BranchServiceInterface
     public function invite(User $manager, string $email, ?string $phone = null): OrganizationInvitation;
 
     /**
+     * The organization owner invites the leader of a new branch in one of the organization's headquarters of the
+     * given type: the invitation carries the organization and the headquarters (foreign keys). 403 for anyone but
+     * the owner, and for a headquarters of another organization; 404 for a missing one.
+     */
+    public function inviteAsOwner(User $owner, HeadquarterType $type, int $headquarterId, string $email, ?string $phone = null): OrganizationInvitation;
+
+    /**
+     * Pending invitations to create a branch anywhere in the owner's organization, for the given type.
+     *
+     * @return Collection<int, OrganizationInvitation>
+     */
+    public function pendingInvitationsForOwner(User $owner, HeadquarterType $type): Collection;
+
+    /**
      * Cancels the branch invitation, provided it was sent from the logged-in manager's organization and headquarters.
      */
     public function cancel(User $manager, OrganizationInvitation $invitation): void;

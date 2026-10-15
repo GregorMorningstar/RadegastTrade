@@ -23,14 +23,6 @@ class OrganizationInvitationController extends Controller
     }
 
     /**
-     * Invitation of another owner to an EXISTING organization.
-     */
-    public function store(StoreOrganizationInvitationRequest $request, Organization $organization): RedirectResponse
-    {
-        return $this->send($request, $organization);
-    }
-
-    /**
      * Cancels the invitation.
      */
     public function destroy(Request $request, OrganizationInvitation $invitation): RedirectResponse

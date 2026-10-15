@@ -83,7 +83,8 @@ class HeadquarterInvitationService implements HeadquarterInvitationServiceInterf
         $organization = $this->headquarters->organizationOf($by);
 
         abort_unless($invitation->organization_id === $organization->id, 403, 'To zaproszenie należy do innej organizacji.');
-        abort_unless(HeadquarterType::forRole($invitation->role) !== null, 403);
+        // an invitation of a headquarters manager or of a branch leader (the owner invites both)
+        abort_unless(HeadquarterType::forRole($invitation->role) !== null || HeadquarterType::forLeaderRole($invitation->role) !== null, 403);
 
         $invitation->revoke($by);
     }

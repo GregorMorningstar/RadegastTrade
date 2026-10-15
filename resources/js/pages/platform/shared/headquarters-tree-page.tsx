@@ -15,7 +15,7 @@ export default function HeadquartersTreePage({ type }: { type: 'shops' | 'wareho
                 <div className="mb-3">
                     <OrganizationTopMenuComponent />
                 </div>
-                <HeadquartersTree type={type} />
+                <HeadquartersTree url={`/platform/headquarters/${type}/tree`} type={type} />
             </Content>
         </>
     );

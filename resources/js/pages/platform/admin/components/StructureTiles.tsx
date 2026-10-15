@@ -1,8 +1,10 @@
-import { Building2, ChevronDown, ChevronLeft, ChevronRight, Mail, MapPin, MessageCircle, Phone, Search, User, X } from 'lucide-react';
+import { usePage } from '@inertiajs/react';
+import { Building2, ChevronDown, ChevronLeft, ChevronRight, Mail, MapPin, MessageCircle, Phone, Power, Search, User, Users, X } from 'lucide-react';
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import Barcode from 'react-barcode';
 import { chatWindow } from '@/lib/chat-window';
+import { roleColor } from '@/lib/role-colors';
 import { cn } from '@/lib/utils';
 
 export type Person = {
@@ -12,6 +14,10 @@ export type Person = {
     phone: string | null;
     barcode: string | null;
     role: string;
+    /** Role value, e.g. shop_leader (the colour of the role badge follows from it) */
+    role_value?: string;
+    /** Whether the account may be used (switched by the organization owner) */
+    is_active?: boolean;
 };
 
 export type Unit = {
@@ -29,13 +35,29 @@ export type Headquarters = Unit & { organization?: string | null; branches: Unit
 
 export type Paging<T> = { data: T[]; current_page: number; last_page: number; total: number };
 
-/** The person whose details are shown in the panel on the right. */
-type Selection = { person: Person | null; select: (person: Person | null) => void };
+/** What the panel on the right shows: a person, a unit (headquarters / branch) or nothing. */
+export type Selected =
+    | { kind: 'person'; person: Person }
+    | { kind: 'unit'; unit: Unit; title: string; unitKind: string; organization?: string | null };
 
-const SelectionContext = createContext<Selection>({ person: null, select: () => undefined });
+type Selection = {
+    selected: Selected | null;
+    select: (selected: Selected | null) => void;
+    /** Switches a person's active flag locally after the server accepted it */
+    setActive: (personId: number, active: boolean) => void;
+    /** Locally changed active flags (person id -> flag) */
+    overrides: Record<number, boolean>;
+};
+
+const SelectionContext = createContext<Selection>({ selected: null, select: () => undefined, setActive: () => undefined, overrides: {} });
 
 export function useStructureSelection(): Selection {
     return useContext(SelectionContext);
+}
+
+/** Whether the person's account is active, taking the locally switched flags into account. */
+function isActive(person: Person, overrides: Record<number, boolean>): boolean {
+    return overrides[person.id] ?? person.is_active !== false;
 }
 
 /** Smoothly expands / collapses its content (animated height and opacity). */
@@ -62,16 +84,203 @@ function BarcodeImage({ value, title }: { value: string; title: string }) {
     );
 }
 
-/** Details of the selected person, shown beside the list (filling the space on the right). */
-function PersonPanel() {
-    const { person, select } = useStructureSelection();
+/** Coloured badge of the role of a person. */
+export function RoleBadge({ person }: { person: Person }) {
+    return <span className={cn('inline-block whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium', roleColor(person.role_value))}>{person.role}</span>;
+}
+
+/** Green / grey dot and word: whether the account is active. */
+function ActiveFlag({ active, compact = false }: { active: boolean; compact?: boolean }) {
+    return (
+        <span className={cn('inline-flex items-center gap-1 whitespace-nowrap text-xs', active ? 'text-[#1e7e34]' : 'text-[#6c757d]')} title={active ? 'Konto aktywne' : 'Konto nieaktywne'}>
+            <span className={cn('size-2 rounded-full', active ? 'bg-[#28a745]' : 'bg-[#adb5bd]')} />
+            {!compact && (active ? 'aktywny' : 'nieaktywny')}
+        </span>
+    );
+}
+
+/** Details of a person: role, contact, barcode, chat and (for the organization owner) the active switch. */
+function PersonDetails({ person }: { person: Person }) {
+    const { setActive, overrides } = useStructureSelection();
+    const viewerRole = usePage().props.auth?.user?.role;
+    const canSwitch = viewerRole === 'organization_owner' && person.role_value !== 'organization_owner';
+    const active = isActive(person, overrides);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const toggle = async () => {
+        const next = !active;
+
+        if (!next && !confirm(`Dezaktywować konto: ${person.name}? Osoba zostanie wylogowana i nie zaloguje się, dopóki go nie włączysz.`)) {
+            return;
+        }
+
+        setBusy(true);
+        setError(null);
+
+        try {
+            const token = decodeURIComponent(document.cookie.split('; ').find((row) => row.startsWith('XSRF-TOKEN='))?.split('=')[1] ?? '');
+            const response = await fetch(`/memberships/people/${person.id}/active`, {
+                method: 'PATCH',
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-XSRF-TOKEN': token },
+                body: JSON.stringify({ active: next }),
+            });
+
+            if (!response.ok) {
+                throw new Error(String(response.status));
+            }
+
+            setActive(person.id, next);
+        } catch {
+            setError('Nie udało się zmienić statusu konta.');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <>
+            <div className="min-w-0 px-8">
+                <h5 className="text-lg font-semibold">{person.name}</h5>
+                <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
+                    <RoleBadge person={person} />
+                    <ActiveFlag active={active} />
+                </div>
+            </div>
+
+            <p className="flex items-center justify-center gap-2 break-all text-sm text-[#495057]">
+                <Mail className="size-4 shrink-0 text-[#6c757d]" />
+                {person.email}
+            </p>
+            <p className="flex items-center justify-center gap-2 text-sm text-[#495057]">
+                <Phone className="size-4 shrink-0 text-[#6c757d]" />
+                {person.phone ?? 'brak numeru'}
+            </p>
+
+            {person.barcode && (
+                <div className="flex w-full justify-center rounded bg-[#f8f9fa] py-3">
+                    <BarcodeImage value={person.barcode} title="Kod użytkownika" />
+                </div>
+            )}
+
+            <button
+                type="button"
+                onClick={() => chatWindow.openWith(person.id)}
+                className="flex w-full max-w-sm items-center justify-center gap-2 rounded bg-[#0084ff] px-3 py-2 text-sm text-white hover:bg-[#0073e6]"
+            >
+                <MessageCircle className="size-4" />
+                Czat
+            </button>
+
+            {canSwitch && (
+                <>
+                    <button
+                        type="button"
+                        onClick={toggle}
+                        disabled={busy}
+                        className={cn(
+                            'flex w-full max-w-sm items-center justify-center gap-2 rounded border px-3 py-2 text-sm disabled:opacity-60',
+                            active ? 'border-[#dc3545] text-[#dc3545] hover:bg-[#fff5f5]' : 'border-[#28a745] text-[#1e7e34] hover:bg-[#f1fbf3]',
+                        )}
+                    >
+                        <Power className="size-4" />
+                        {busy ? 'Zapisuję…' : active ? 'Dezaktywuj konto' : 'Aktywuj konto'}
+                    </button>
+                    {error && <p className="text-xs text-[#dc3545]">{error}</p>}
+                </>
+            )}
+        </>
+    );
+}
+
+/** Details of a unit: kind, organization, contact, barcode and the people working in it (click one to see them). */
+function UnitDetails({ selected }: { selected: Extract<Selected, { kind: 'unit' }> }) {
+    const { select, overrides } = useStructureSelection();
+    const { unit } = selected;
+    const empty = !unit.nip && !unit.phone && !unit.email && !unit.address;
+
+    return (
+        <>
+            <div className="min-w-0 px-8">
+                <h5 className="text-lg font-semibold">{selected.title}</h5>
+                <p className="text-sm text-[#6c757d]">
+                    {selected.unitKind}
+                    {selected.organization ? ` · organizacja: ${selected.organization}` : ''}
+                </p>
+                {selected.title !== unit.name && <p className="mt-0.5 text-xs text-[#6c757d]">{unit.name}</p>}
+            </div>
+
+            <div className="w-full space-y-1.5 text-sm text-[#495057]">
+                {unit.nip && <p>NIP {unit.nip}</p>}
+                {unit.phone && (
+                    <p className="flex items-center justify-center gap-2">
+                        <Phone className="size-4 text-[#6c757d]" />
+                        {unit.phone}
+                    </p>
+                )}
+                {unit.email && (
+                    <p className="flex items-center justify-center gap-2 break-all">
+                        <Mail className="size-4 shrink-0 text-[#6c757d]" />
+                        {unit.email}
+                    </p>
+                )}
+                {unit.address && (
+                    <p className="flex items-center justify-center gap-2">
+                        <MapPin className="size-4 shrink-0 text-[#6c757d]" />
+                        {unit.address}
+                    </p>
+                )}
+                {empty && <p className="text-[#6c757d]">Brak danych kontaktowych.</p>}
+            </div>
+
+            {unit.barcode && (
+                <div className="flex w-full justify-center rounded bg-[#f8f9fa] py-3">
+                    <BarcodeImage value={unit.barcode} title="Kod jednostki" />
+                </div>
+            )}
+
+            <div className="w-full text-left">
+                <h6 className="mb-1.5 flex items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#6c757d]">
+                    <Users className="size-3.5" />
+                    Osoby ({unit.people.length})
+                </h6>
+                {unit.people.length === 0 ? (
+                    <p className="text-center text-xs text-[#6c757d]">Brak osób.</p>
+                ) : (
+                    <ul className="space-y-1">
+                        {unit.people.map((person) => (
+                            <li key={person.id}>
+                                <button
+                                    type="button"
+                                    onClick={() => select({ kind: 'person', person })}
+                                    className="flex w-full items-center justify-between gap-2 rounded border border-[#e9ecef] px-2.5 py-1.5 text-left text-sm hover:bg-[#f8f9fa]"
+                                >
+                                    <span className="min-w-0 truncate font-medium">{person.name}</span>
+                                    <span className="flex shrink-0 items-center gap-2">
+                                        <RoleBadge person={person} />
+                                        <ActiveFlag active={isActive(person, overrides)} compact />
+                                    </span>
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+        </>
+    );
+}
+
+/** Details of what is selected, shown beside the list (filling the space on the right). */
+function DetailsPanel() {
+    const { selected, select } = useStructureSelection();
 
     return (
         <aside className="rounded border border-[#cfe2ff] bg-white p-4 shadow-sm lg:sticky lg:top-4">
-            {person === null ? (
+            {selected === null ? (
                 <div className="flex flex-col items-center gap-2 py-8 text-center text-sm text-[#6c757d]">
                     <User className="size-8" />
-                    Kliknij osobę na liście, aby zobaczyć jej szczegóły.
+                    Kliknij osobę, siedzibę lub placówkę na liście, aby zobaczyć szczegóły.
                 </div>
             ) : (
                 <div className="relative mx-auto flex max-w-xl flex-col items-center gap-3 text-center">
@@ -84,50 +293,30 @@ function PersonPanel() {
                         <X className="size-4" />
                     </button>
 
-                    <div className="min-w-0 px-8">
-                        <h5 className="text-lg font-semibold">{person.name}</h5>
-                        <p className="text-sm text-[#6c757d]">{person.role}</p>
-                    </div>
-
-                    <p className="flex items-center justify-center gap-2 break-all text-sm text-[#495057]">
-                        <Mail className="size-4 shrink-0 text-[#6c757d]" />
-                        {person.email}
-                    </p>
-                    <p className="flex items-center justify-center gap-2 text-sm text-[#495057]">
-                        <Phone className="size-4 shrink-0 text-[#6c757d]" />
-                        {person.phone ?? 'brak numeru'}
-                    </p>
-
-                    {person.barcode && (
-                        <div className="flex w-full justify-center rounded bg-[#f8f9fa] py-3">
-                            <BarcodeImage value={person.barcode} title="Kod użytkownika" />
-                        </div>
-                    )}
-
-                    <button
-                        type="button"
-                        onClick={() => chatWindow.openWith(person.id)}
-                        className="flex w-full max-w-sm items-center justify-center gap-2 rounded bg-[#0084ff] px-3 py-2 text-sm text-white hover:bg-[#0073e6]"
-                    >
-                        <MessageCircle className="size-4" />
-                        Czat
-                    </button>
+                    {selected.kind === 'person' ? <PersonDetails person={selected.person} /> : <UnitDetails selected={selected} />}
                 </div>
             )}
         </aside>
     );
 }
 
-/** Layout of a structure view: the list on the left, details of the selected person right next to it. */
-export function StructureLayout({ children }: { children: ReactNode }) {
-    const [person, select] = useState<Person | null>(null);
+/** Layout of a structure view: the list on the left, details of the selected person or unit right next to it. */
+export function StructureLayout({ children, onSelect }: { children: ReactNode; onSelect?: (selected: Selected | null) => void }) {
+    const [selected, setSelected] = useState<Selected | null>(null);
+    const [overrides, setOverrides] = useState<Record<number, boolean>>({});
+
+    // the page around the list may react to what is clicked (e.g. open the details of the clicked headquarters)
+    const select = (next: Selected | null) => {
+        setSelected(next);
+        onSelect?.(next);
+    };
 
     return (
-        <SelectionContext.Provider value={{ person, select }}>
+        <SelectionContext.Provider value={{ selected, select, overrides, setActive: (id, active) => setOverrides((previous) => ({ ...previous, [id]: active })) }}>
             <div className="grid grid-cols-1 items-start justify-start gap-4 lg:grid-cols-[minmax(0,auto)_minmax(20rem,1fr)]">
                 <div className="min-w-0">{children}</div>
-                <div className={cn('lg:order-last', person === null ? 'hidden lg:block' : 'order-first')}>
-                    <PersonPanel />
+                <div className={cn('lg:order-last', selected === null ? 'hidden lg:block' : 'order-first')}>
+                    <DetailsPanel />
                 </div>
             </div>
         </SelectionContext.Provider>
@@ -139,21 +328,30 @@ export function TileGrid({ children }: { children: ReactNode }) {
     return <div className="flex flex-wrap items-start gap-x-3">{children}</div>;
 }
 
-/** One person in a list: just the name and the chat button. Clicking the name shows the details on the right. */
+/** One person in a list: name, role badge, active flag and the chat button. Clicking shows the details on the right. */
 function PersonRow({ person }: { person: Person }) {
-    const { person: selected, select } = useStructureSelection();
-    const active = selected?.id === person.id;
+    const { selected, select, overrides } = useStructureSelection();
+    const current = selected?.kind === 'person' && selected.person.id === person.id;
+    const active = isActive(person, overrides);
 
     return (
-        <div className={cn('flex items-center gap-2 rounded border px-3 py-2 text-sm transition-colors', active ? 'border-[#007bff] bg-[#e7f1ff]' : 'border-[#e9ecef] bg-white hover:bg-[#f8f9fa]')}>
+        <div
+            className={cn(
+                'flex items-center gap-2 rounded border px-3 py-2 text-sm transition-colors',
+                current ? 'border-[#007bff] bg-[#e7f1ff]' : 'border-[#e9ecef] bg-white hover:bg-[#f8f9fa]',
+                !active && 'opacity-70',
+            )}
+        >
             <button
                 type="button"
-                onClick={() => select(active ? null : person)}
-                aria-pressed={active}
+                onClick={() => select(current ? null : { kind: 'person', person })}
+                aria-pressed={current}
                 title="Pokaż szczegóły"
-                className="min-w-0 flex-1 truncate text-left font-semibold"
+                className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-left"
             >
-                {person.name}
+                <span className="min-w-0 truncate font-semibold">{person.name}</span>
+                <RoleBadge person={person} />
+                <ActiveFlag active={active} compact />
             </button>
             <button
                 type="button"
@@ -181,7 +379,7 @@ export function PeopleTiles({ people, empty }: { people: Person[]; empty: string
     );
 }
 
-/** Contact details of a headquarters or a branch, with its barcode. */
+/** Short contact lines of a headquarters or a branch (the full details, with the barcode, are in the panel on the right). */
 function UnitContact({ unit }: { unit: Unit }) {
     const empty = !unit.nip && !unit.phone && !unit.email && !unit.address;
 
@@ -207,20 +405,41 @@ function UnitContact({ unit }: { unit: Unit }) {
                 </p>
             )}
             {empty && <p className="text-[#6c757d]">Brak danych kontaktowych.</p>}
-            {unit.barcode && (
-                <div className="flex justify-center pt-1">
-                    <Barcode value={unit.barcode} format="EAN13" width={1.2} height={32} fontSize={11} margin={0} background="transparent" />
-                </div>
-            )}
         </div>
     );
 }
 
-/** One unit (the headquarters itself or a branch): a header that opens it, and its contact and people when open. */
-function UnitSection({ title, kind, unit, open, onToggle }: { title: string; kind: string; unit: Unit; open: boolean; onToggle: () => void }) {
+/**
+ * One unit (the headquarters itself or a branch): a header that opens it and shows its details on the right,
+ * and its contact and people when open.
+ */
+function UnitSection({
+    title,
+    kind,
+    unit,
+    organization,
+    open,
+    onToggle,
+}: {
+    title: string;
+    kind: string;
+    unit: Unit;
+    organization?: string | null;
+    open: boolean;
+    onToggle: () => void;
+}) {
+    const { selected, select } = useStructureSelection();
+    const shown = selected?.kind === 'unit' && selected.unit.id === unit.id && selected.title === title;
+
+    const click = () => {
+        onToggle();
+        // opening a unit shows its details on the right; closing it clears them
+        select(open ? (shown ? null : selected) : { kind: 'unit', unit, title, unitKind: kind, organization });
+    };
+
     return (
         <div className={cn('mb-2 rounded border transition-colors', open ? 'border-[#007bff] bg-white' : 'border-[#e9ecef] bg-[#f8f9fa]')}>
-            <button type="button" onClick={onToggle} aria-expanded={open} className="flex w-full items-center gap-2 px-3 py-2 text-left">
+            <button type="button" onClick={click} aria-expanded={open} className="flex w-full items-center gap-2 px-3 py-2 text-left">
                 <Building2 className="size-4 shrink-0 text-[#6c757d]" />
                 <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold">{title}</span>
@@ -240,42 +459,65 @@ function UnitSection({ title, kind, unit, open, onToggle }: { title: string; kin
     );
 }
 
+/** What a headquarters tile shows: only the main headquarters, only its branches, or both. */
+export type TileContent = 'headquarters' | 'branches' | 'all';
+
 /**
  * A headquarters tile: the header shows the organization and totals; below are the headquarters itself and each
- * branch as sections. Clicking a section opens it and collapses the others with an animation.
+ * branch as sections, depending on `content`: the pages of the main headquarters show only the headquarters data
+ * (contact and managers), the pages of the branches only the branches of each headquarters. Clicking a section opens
+ * it (collapsing the others) and shows its details on the right.
  */
-export function HeadquartersTile({ headquarters }: { headquarters: Headquarters }) {
+export function HeadquartersTile({ headquarters, content = 'all' }: { headquarters: Headquarters; content?: TileContent }) {
     const [active, setActive] = useState<string | null>(null);
     const toggle = (key: string) => setActive(active === key ? null : key);
     const peopleCount = headquarters.people.length + headquarters.branches.reduce((sum, branch) => sum + branch.people.length, 0);
+    const branchesOnly = content === 'branches';
+    const branchPeople = headquarters.branches.reduce((sum, branch) => sum + branch.people.length, 0);
 
     return (
-        <div className="w-full pb-3 md:w-[24rem]">
+        <div className="w-full pb-3 md:w-[34rem]">
             <section className="rounded border border-[#dee2e6] bg-white p-3 shadow-sm">
                 <header className="flex items-start gap-2 pb-3">
                     <Building2 className="mt-0.5 size-5 shrink-0 text-[#007bff]" />
                     <div className="min-w-0">
                         <h5 className="font-semibold leading-tight">{headquarters.name}</h5>
+                        {branchesOnly && <p className="text-xs text-[#6c757d]">główna siedziba</p>}
                         {headquarters.organization && <p className="text-xs text-[#6c757d]">organizacja: {headquarters.organization}</p>}
                         <p className="text-xs text-[#6c757d]">
-                            {headquarters.branches.length} placówek · {peopleCount} osób
+                            {content === 'headquarters'
+                                ? `${headquarters.people.length} osób w siedzibie`
+                                : branchesOnly
+                                  ? `${headquarters.branches.length} placówek · ${branchPeople} osób`
+                                  : `${headquarters.branches.length} placówek · ${peopleCount} osób`}
                         </p>
                     </div>
                 </header>
 
-                <UnitSection title="Główna siedziba" kind="kontakt i kierownicy" unit={headquarters} open={active === 'hq'} onToggle={() => toggle('hq')} />
-
-                {headquarters.branches.length === 0 && <p className="px-1 text-xs text-[#6c757d]">Brak placówek.</p>}
-                {headquarters.branches.map((branch) => (
+                {content !== 'branches' && (
                     <UnitSection
-                        key={branch.id}
-                        title={branch.name}
-                        kind="placówka"
-                        unit={branch}
-                        open={active === `b${branch.id}`}
-                        onToggle={() => toggle(`b${branch.id}`)}
+                        title="Główna siedziba"
+                        kind="kontakt i kierownicy"
+                        unit={headquarters}
+                        organization={headquarters.organization}
+                        open={active === 'hq'}
+                        onToggle={() => toggle('hq')}
                     />
-                ))}
+                )}
+
+                {content !== 'headquarters' && headquarters.branches.length === 0 && <p className="px-1 text-xs text-[#6c757d]">Brak placówek.</p>}
+                {content !== 'headquarters' &&
+                    headquarters.branches.map((branch) => (
+                        <UnitSection
+                            key={branch.id}
+                            title={branch.name}
+                            kind="placówka"
+                            unit={branch}
+                            organization={headquarters.organization}
+                            open={active === `b${branch.id}`}
+                            onToggle={() => toggle(`b${branch.id}`)}
+                        />
+                    ))}
             </section>
         </div>
     );

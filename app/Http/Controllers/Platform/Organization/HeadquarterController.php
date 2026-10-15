@@ -57,6 +57,8 @@ class HeadquarterController extends Controller
                         'id' => $user->id,
                         'name' => $user->name,
                         'email' => $user->email,
+                        'phone' => $user->phone,
+                        'role' => $user->role->label(),
                     ])->values(),
                     'invitations' => $this->invitationsData($headquarter->invitations),
                 ])->values(),

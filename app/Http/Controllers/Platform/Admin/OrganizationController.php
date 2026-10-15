@@ -2,25 +2,14 @@
 
 namespace App\Http\Controllers\Platform\Admin;
 
-use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\Organization;
 use App\Models\OrganizationInvitation;
-use App\Models\User;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class OrganizationController extends Controller
 {
-    /**
-     * Organization creation page: the administrator sends an email invitation,
-     * and the invited person fills in the organization details after accepting it.
-     */
-    public function create(): Response
-    {
-        return Inertia::render('platform/admin/organizations/create');
-    }
-
     public function index(): Response
     {
         return Inertia::render('platform/admin/organizations/index', [
