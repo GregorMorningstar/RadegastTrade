@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Services\Contracts\StructureListingServiceInterface;
 use App\Enums\HeadquarterType;
+use App\Enums\UserRole;
 use App\Models\ShopBranch;
 use App\Models\ShopHeadquarter;
 use App\Models\User;
@@ -18,13 +19,18 @@ class StructureListingService implements StructureListingServiceInterface
     /**
      * @return list<array<string, mixed>>
      */
-    public function headquarters(HeadquarterType $type): array
+    private const LIMIT = 500;
+
+    public function headquarters(User $viewer, HeadquarterType $type): array
     {
+        $this->authorize($viewer);
+
         $model = $type === HeadquarterType::Shop ? ShopHeadquarter::class : WarehouseHeadquarter::class;
 
         return $model::query()
             ->with(['organization:id,name,NIP', 'users:id,shop_headquarter_id,warehouse_headquarter_id,name,email,role'])
             ->orderBy('name')
+            ->limit(self::LIMIT)
             ->get()
             ->map(fn (ShopHeadquarter|WarehouseHeadquarter $headquarter) => [
                 'id' => $headquarter->id,
@@ -43,13 +49,16 @@ class StructureListingService implements StructureListingServiceInterface
      *
      * @return list<array<string, mixed>>
      */
-    public function branches(HeadquarterType $type): array
+    public function branches(User $viewer, HeadquarterType $type): array
     {
+        $this->authorize($viewer);
+
         $model = $type === HeadquarterType::Shop ? ShopBranch::class : WarehouseBranch::class;
 
         return $model::query()
             ->with(['organization:id,name,NIP', 'headquarter:id,name,NIP', 'users:id,shop_branch_id,warehouse_branch_id,name,email'])
             ->orderBy('name')
+            ->limit(self::LIMIT)
             ->get()
             ->map(fn (ShopBranch|WarehouseBranch $branch) => [
                 'id' => $branch->id,
@@ -62,6 +71,11 @@ class StructureListingService implements StructureListingServiceInterface
                 'is_active' => $branch->is_active,
                 'managers' => $this->people($branch->users),
             ])->values()->all();
+    }
+
+    private function authorize(User $viewer): void
+    {
+        abort_unless($viewer->role === UserRole::Admin, 403);
     }
 
     private function address(ShopHeadquarter|WarehouseHeadquarter|ShopBranch|WarehouseBranch $place): string

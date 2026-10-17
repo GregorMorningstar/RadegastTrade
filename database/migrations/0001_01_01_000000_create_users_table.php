@@ -36,6 +36,12 @@ return new class extends Migration
             $table->string('avatar_path')->nullable();
             $table->timestamp('last_seen_at')->nullable();
 
+            // Whether the account may be used (the owner of an organization switches it for the people of their organization;
+            // an inactive account is signed out, see EnsureUserIsActive), and who switched it off and when
+            $table->boolean('is_active')->default(true);
+            $table->foreignId('deactivated_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamp('deactivated_at')->nullable();
+
             // Phone number in E.164 form (+48123456789); required at registration (the invitation's number is prefilled)
             $table->string('phone', 20)->nullable();
 

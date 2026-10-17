@@ -37,7 +37,8 @@ interface HeadquarterManagerRepositoryInterface
      */
     public function leadersOf(HeadquarterType $type, int $branchId): Collection;
 
-    public function findBranch(HeadquarterType $type, int $branchId): ShopBranch|WarehouseBranch|null;
+    /** A branch of the organization (a branch of another organization is never found). */
+    public function findBranch(int $organizationId, HeadquarterType $type, int $branchId): ShopBranch|WarehouseBranch|null;
 
     /**
      * Makes the user one of the managers of the headquarters: the manager role, this headquarters, no branch.

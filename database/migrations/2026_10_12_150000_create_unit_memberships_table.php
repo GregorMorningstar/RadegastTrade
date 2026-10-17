@@ -20,7 +20,7 @@ return new class extends Migration
         Schema::create('unit_memberships', function (Blueprint $table) {
             $table->id();
 
-            $table->foreignId('organization_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('organization_id')->constrained()->restrictOnDelete();
             $table->foreignId('user_id')->unique()->constrained()->cascadeOnDelete();
 
             // The unit: exactly one of these four

@@ -14,6 +14,13 @@ interface UnitMembershipServiceInterface
     public function canSetActive(User $actor, User $target): bool;
 
     /**
+     * The units of the person for the menu (see UnitMembershipRepositoryInterface::unitsOf); empty for platform accounts.
+     *
+     * \return list<array{type: string, level: string, name: string}>
+     */
+    public function overview(User $user): array;
+
+    /**
      * Switches a person's account on or off (see canSetActive; 403 / a validation error otherwise). The person
      * who did it and the time are recorded. A deactivated person still logs in, but only sees the "account is not
      * active" page and may chat with the person who deactivated them and with the administrators.

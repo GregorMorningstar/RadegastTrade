@@ -86,12 +86,13 @@ test('nie można pisać do osoby spoza organizacji ani do siebie, a konto bez or
     $f = chatFixture();
 
     $this->actingAs($f['a']);
-    $this->postJson(route('chat.send', $f['outsider']), ['body' => 'x'])->assertForbidden();
-    $this->getJson(route('chat.messages', $f['outsider']))->assertForbidden();
+    // a person of another organization does not exist for the sender
+    $this->postJson(route('chat.send', $f['outsider']), ['body' => 'x'])->assertNotFound();
+    $this->getJson(route('chat.messages', $f['outsider']))->assertNotFound();
     $this->postJson(route('chat.send', $f['a']), ['body' => 'x'])->assertForbidden();
 
     $this->actingAs($f['loner'])->postJson(route('chat.send', $f['b']), ['body' => 'x'])->assertForbidden();
-    $this->actingAs($f['outsider'])->getJson(route('chat.messages', $f['a']))->assertForbidden();
+    $this->actingAs($f['outsider'])->getJson(route('chat.messages', $f['a']))->assertNotFound();
 
     expect(Message::count())->toBe(0);
     Event::assertNotDispatched(MessageSent::class);
@@ -216,5 +217,5 @@ test('administrator pisze z osobami z dowolnej organizacji, a one widzą go na l
 
     // an account without an organization still cannot talk to the administrator, and users cannot see each other across organizations
     $this->actingAs($f['loner'])->postJson(route('chat.send', $f['admin']), ['body' => 'x'])->assertForbidden();
-    $this->actingAs($f['a'])->postJson(route('chat.send', $f['outsider']), ['body' => 'x'])->assertForbidden();
+    $this->actingAs($f['a'])->postJson(route('chat.send', $f['outsider']), ['body' => 'x'])->assertNotFound();
 });

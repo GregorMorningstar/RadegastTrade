@@ -77,7 +77,7 @@ test('kierownik hurtowni widzi tylko swoje placówki, a cudzych zaproszeń nie a
 
     $this->actingAs($manager)
         ->delete(route('warehouse.owner.branches.invitations.destroy', $foreignInvitation->id))
-        ->assertForbidden();
+        ->assertNotFound();
 
     $this->get(route('warehouse.owner.branches.index'))
         ->assertOk()

@@ -17,6 +17,9 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
  */
 class TeamMembersService implements TeamMembersServiceInterface
 {
+    /** The most rows of one listing (the people and the invitations each). */
+    private const LIMIT = 500;
+
     public function __construct(private readonly UnitMembershipServiceInterface $memberships)
     {
         //
@@ -73,6 +76,7 @@ class TeamMembersService implements TeamMembersServiceInterface
         $users = User::query()
             ->where('organization_id', $organizationId)
             ->with(['shopHeadquarter:id,name', 'warehouseHeadquarter:id,name', 'shopBranch:id,name', 'warehouseBranch:id,name', 'deactivatedBy:id,name'])
+            ->limit(self::LIMIT)
             ->get()
             ->filter(fn (User $user) => $headquarter === null
                 || $user->role === UserRole::ORGANIZATION_OWNER
@@ -84,6 +88,7 @@ class TeamMembersService implements TeamMembersServiceInterface
             ->whereNull('accepted_at')
             ->where('expires_at', '>', now())
             ->with(['shopHeadquarter:id,name', 'warehouseHeadquarter:id,name', 'shopBranch:id,name', 'warehouseBranch:id,name'])
+            ->limit(self::LIMIT)
             ->get()
             ->filter(fn (OrganizationInvitation $invitation) => $headquarter === null
                 || $invitation->{$headquarter[0]->headquarterColumn()} === $headquarter[1]);

@@ -31,13 +31,30 @@ test('ta sama nazwa siedziby może wystąpić w różnych organizacjach, ale nie
     $a->shopHeadquarters()->create(['name' => 'Centrala']);
 })->throws(UniqueConstraintViolationException::class);
 
-test('usunięcie organizacji usuwa jej siedziby', function () {
+test('organizacji z siedzibami nie da się usunąć, dopiero pusta', function () {
     $org = Organization::create(['name' => 'Org']);
     $org->warehouseHeadquarters()->create(['name' => 'H']);
     $org->shopHeadquarters()->create(['name' => 'S']);
 
+    expect(fn () => $org->delete())->toThrow(Illuminate\Database\QueryException::class);
+    expect(WarehouseHeadquarter::count())->toBe(1)->and(ShopHeadquarter::count())->toBe(1);
+
+    WarehouseHeadquarter::query()->delete();
+    ShopHeadquarter::query()->delete();
     $org->delete();
 
-    expect(WarehouseHeadquarter::count())->toBe(0)
-        ->and(ShopHeadquarter::count())->toBe(0);
+    expect(Organization::count())->toBe(0);
+});
+
+test('baza pilnuje, że placówka należy do tej samej organizacji co jej siedziba, i nie kasuje siedziby z placówkami', function () {
+    $org = Organization::create(['name' => 'Org']);
+    $other = Organization::create(['name' => 'Inna']);
+    $hq = $org->shopHeadquarters()->create(['name' => 'S']);
+
+    $branch = fn (int $organizationId) => App\Models\ShopBranch::create(['organization_id' => $organizationId, 'shop_headquarter_id' => $hq->id, 'name' => 'P'.$organizationId]);
+
+    expect(fn () => $branch($other->id))->toThrow(Illuminate\Database\QueryException::class);
+
+    $branch($org->id);
+    expect(fn () => $hq->delete())->toThrow(Illuminate\Database\QueryException::class);
 });

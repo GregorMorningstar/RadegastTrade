@@ -42,9 +42,9 @@ class EloquentHeadquarterManagerRepository implements HeadquarterManagerReposito
             ->get();
     }
 
-    public function findBranch(HeadquarterType $type, int $branchId): ShopBranch|WarehouseBranch|null
+    public function findBranch(int $organizationId, HeadquarterType $type, int $branchId): ShopBranch|WarehouseBranch|null
     {
-        return ($type === HeadquarterType::Shop ? ShopBranch::class : WarehouseBranch::class)::find($branchId);
+        return ($type === HeadquarterType::Shop ? ShopBranch::class : WarehouseBranch::class)::query()->where('organization_id', $organizationId)->find($branchId);
     }
 
     public function addManager(HeadquarterType $type, int $headquarterId, User $user): void

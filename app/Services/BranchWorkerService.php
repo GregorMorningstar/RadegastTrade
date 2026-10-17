@@ -133,13 +133,14 @@ class BranchWorkerService implements BranchWorkerServiceInterface
         $branch = $this->branchOf($leader);
         $type = $this->typeOfLeader($leader);
 
+        // an invitation of another organization does not exist for the leader
+        abort_unless($invitation->organization_id === $leader->organization_id, 404);
         abort_unless(
             $invitation->role === $type->workerRole()
-                && $invitation->organization_id === $leader->organization_id
                 && $invitation->{$type->headquarterColumn()} === $leader->{$type->headquarterColumn()}
                 && $invitation->{$type->branchColumn()} === $branch->id,
             403,
-            'To zaproszenie należy do innej organizacji, siedziby lub placówki.',
+            'To zaproszenie należy do innej siedziby lub placówki.',
         );
 
         $invitation->revoke($leader);

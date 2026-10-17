@@ -173,7 +173,7 @@ test('kierownika placówki zmienia tylko kierownik jej siedziby', function () {
         $this->actingAs($f[$who])->post($assign, ['user_id' => $f['worker']->id])->assertForbidden();
     }
     // a foreign organization
-    $this->actingAs($f['foreign'])->post($assign, ['user_id' => $f['worker']->id])->assertForbidden();
+    $this->actingAs($f['foreign'])->post($assign, ['user_id' => $f['worker']->id])->assertNotFound();
     // a missing branch
     $this->actingAs($f['managerB'])->post(route('shop.owner.branches.leaders.assign', 999999), ['user_id' => $f['worker']->id])->assertNotFound();
 
@@ -210,11 +210,11 @@ test('zmiana kierownika jest zamknięta dla innych ról i cudzych siedzib', func
     $this->actingAs(User::factory()->create(['role' => UserRole::Admin]))->getJson($candidates($f['a']))->assertForbidden();
 
     // the owner of another organization cannot touch this one's headquarters
-    $this->actingAs($f['foreignOwner'])->getJson($candidates($f['a']))->assertForbidden();
-    $this->post($assign($f['a']), ['user_id' => $f['foreign']->id])->assertForbidden();
+    $this->actingAs($f['foreignOwner'])->getJson($candidates($f['a']))->assertNotFound();
+    $this->post($assign($f['a']), ['user_id' => $f['foreign']->id])->assertNotFound();
 
     // ...and the owner cannot touch a foreign headquarters
-    $this->actingAs($f['owner'])->getJson($candidates($f['foreignHq']))->assertForbidden();
+    $this->actingAs($f['owner'])->getJson($candidates($f['foreignHq']))->assertNotFound();
     $this->actingAs($f['owner'])->getJson(route('platform.organization.headquarters.manager.candidates', ['type' => 'shops', 'headquarter' => 999999]))->assertNotFound();
 
     expect($f['worker']->fresh()->role)->toBe(UserRole::SHOP_WORKER);

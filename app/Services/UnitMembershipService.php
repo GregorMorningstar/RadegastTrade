@@ -19,6 +19,11 @@ class UnitMembershipService implements UnitMembershipServiceInterface
         //
     }
 
+    public function overview(User $user): array
+    {
+        return $this->memberships->unitsOf($user);
+    }
+
     public function canSetActive(User $actor, User $target): bool
     {
         if ($actor->id === $target->id || $actor->organization_id === null || $actor->organization_id !== $target->organization_id) {

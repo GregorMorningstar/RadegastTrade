@@ -164,12 +164,12 @@ class BranchService implements BranchServiceInterface
         $headquarter = $this->headquarterOf($manager);
         $type = $this->typeOfManager($manager);
 
+        // an invitation of another organization does not exist for the manager
+        abort_unless($invitation->organization_id === $manager->organization_id, 404);
         abort_unless(
-            $invitation->role === $type->leaderRole()
-                && $invitation->organization_id === $manager->organization_id
-                && $invitation->{$type->headquarterColumn()} === $headquarter->id,
+            $invitation->role === $type->leaderRole() && $invitation->{$type->headquarterColumn()} === $headquarter->id,
             403,
-            'To zaproszenie należy do innej organizacji lub siedziby.',
+            'To zaproszenie należy do innej siedziby.',
         );
 
         $invitation->revoke($manager);

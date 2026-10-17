@@ -75,21 +75,25 @@ class CreateNewUser implements CreatesNewUsers
         }
 
         return DB::transaction(function () use ($input, $organizationInvitation) {
-            $user = User::create([
+            $user = new User([
                 'name' => $input['name'],
                 'email' => $input['email'],
                 'phone' => $input['phone'],
                 'password' => $input['password'],
-                // default, least privileged role, or the role from the organization invitation
+                'terms_accepted_at' => now(),
+                'privacy_accepted_at' => now(),
+            ]);
+
+            // the role and the place in the structure come from the invitation (the default is the least privileged
+            // role), never from the form: they are not mass assignable
+            $user->forceFill([
                 'role' => $organizationInvitation?->role ?? UserRole::Employee,
                 'organization_id' => $organizationInvitation?->organization_id,
                 'shop_headquarter_id' => $organizationInvitation?->shop_headquarter_id,
                 'warehouse_headquarter_id' => $organizationInvitation?->warehouse_headquarter_id,
                 'shop_branch_id' => $organizationInvitation?->shop_branch_id,
                 'warehouse_branch_id' => $organizationInvitation?->warehouse_branch_id,
-                'terms_accepted_at' => now(),
-                'privacy_accepted_at' => now(),
-            ]);
+            ])->save();
 
             if ($organizationInvitation) {
                 // The key from the email proves access to the mailbox, so the address is verified

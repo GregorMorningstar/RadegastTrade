@@ -117,6 +117,20 @@ enum UserRole: string
     }
 
     /**
+     * What kind of unit the person works in, for the "Jednostka" label of the menu: the organization owner, a shop or
+     * a warehouse; null for platform accounts.
+     */
+    public function unitLabel(): ?string
+    {
+        return match (true) {
+            $this === self::ORGANIZATION_OWNER => 'Właściciel',
+            $this->isShop() => 'Sklep',
+            $this->isWarehouse() => 'Hurtownia',
+            default => null,
+        };
+    }
+
+    /**
      * Whether the role belongs to a warehouse.
      */
     public function isWarehouse(): bool

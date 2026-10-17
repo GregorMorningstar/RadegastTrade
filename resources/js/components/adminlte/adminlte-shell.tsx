@@ -9,6 +9,8 @@ import {
     Menu,
     MessageCircle,
     Network,
+    Package,
+    Settings,
     Store,
     Users,
     UserCircle,
@@ -24,6 +26,7 @@ import { chatWindow, useChatWindowOpen } from "@/lib/chat-window";
 import UserBarcode from "@/components/user-barcode";
 import { cn } from "@/lib/utils";
 import { logout } from "@/routes";
+import { edit as editApiKey } from "@/routes/api-key";
 import { edit as editProfile } from "@/routes/profile";
 
 type MenuItem = {
@@ -32,6 +35,10 @@ type MenuItem = {
     icon: LucideIcon;
     /** Nagłówek sekcji wyświetlany nad pozycją (rozdzielenie, jak "Konto") */
     section?: string;
+    /** Wiersz pod nagłówkiem sekcji, np. rodzaj jednostki */
+    note?: string;
+    /** Jednostki pod notką: siedziby i ich placówki */
+    units?: { type: string; level: string; name: string }[];
     /** Podmenu rozwijane pod pozycją */
     children?: { title: string; href: string }[];
     /** Zamiast przejścia na stronę otwiera okienko czatu nad aplikacją */
@@ -103,6 +110,20 @@ export default function AdminLteShell({
         },
         { title: "Panel", href: base, icon: LayoutGrid },
         { title: "Zadania", href: `${base}/tasks`, icon: ListTodo },
+        ...(isAdminPanel ? [] : [{ title: "Produkty", href: `${base}/products`, icon: Package }]),
+        // właściciel organizacji, kierownicy siedzib i placówek: konfiguracja (klucz API) i rodzaj jednostki
+        ...(props.apiKeyAllowed
+            ? [
+                  {
+                      section: "Jednostka",
+                      note: props.unitLabel ?? undefined,
+                      units: props.units,
+                      title: "Konfiguracja",
+                      href: editApiKey().url,
+                      icon: Settings,
+                  },
+              ]
+            : []),
         ...(isAdminPanel
             ? [
                   {
@@ -309,6 +330,21 @@ export default function AdminLteShell({
                         <Fragment key={item.href}>
                             {item.section && (
                                 <p className={sectionHeading}>{item.section}</p>
+                            )}
+                            {item.note && (
+                                <p className={cn("px-4 pb-1 text-sm font-medium text-white", label)}>
+                                    {item.note}
+                                </p>
+                            )}
+                            {item.units && item.units.length > 0 && (
+                                <ul className={cn("mb-1 px-4 text-xs text-[#c2c7d0]", label)}>
+                                    {item.units.map((unit, index) => (
+                                        <li key={index} className={cn("truncate py-0.5", unit.level === "branch" && "pl-3 text-[#8a9097]")} title={unit.name}>
+                                            {unit.level === "branch" ? "└ " : unit.type === "warehouses" ? "Hurtownia: " : "Sklep: "}
+                                            {unit.name}
+                                        </li>
+                                    ))}
+                                </ul>
                             )}
                             {item.children ? (
                                 <div>

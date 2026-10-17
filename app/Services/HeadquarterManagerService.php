@@ -148,7 +148,10 @@ class HeadquarterManagerService implements HeadquarterManagerServiceInterface
      */
     private function authorizedBranch(User $actor, HeadquarterType $type, int $branchId): ShopBranch|WarehouseBranch
     {
-        $branch = $this->managers->findBranch($type, $branchId);
+        abort_if($actor->organization_id === null, 403);
+
+        // a branch of another organization does not exist for the actor (404, not 403)
+        $branch = $this->managers->findBranch($actor->organization_id, $type, $branchId);
         abort_if($branch === null, 404);
 
         $ownsOrganization = $actor->role === UserRole::ORGANIZATION_OWNER

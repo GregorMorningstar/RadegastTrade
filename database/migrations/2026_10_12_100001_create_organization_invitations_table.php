@@ -16,7 +16,7 @@ return new class extends Migration
 
             // Organization the invited person will own. NULL for an invitation to create a new
             // organization: the invited person fills in its data after accepting the invitation.
-            $table->foreignId('organization_id')->nullable()->constrained()->cascadeOnDelete();
+            $table->foreignId('organization_id')->nullable()->constrained()->restrictOnDelete();
 
             // Headquarters / branch the invitation concerns (all NULL for organization owners).
             // headquarter set, branch NULL: invitation of a branch manager (the branch is created after accepting).

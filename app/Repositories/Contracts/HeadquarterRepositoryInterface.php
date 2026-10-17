@@ -15,7 +15,8 @@ interface HeadquarterRepositoryInterface
      */
     public function forOrganization(int $organizationId): Collection;
 
-    public function find(int $id): ShopHeadquarter|WarehouseHeadquarter|null;
+    /** One headquarters of the organization (a headquarters of another organization is never found). */
+    public function findForOrganization(int $organizationId, int $id): ShopHeadquarter|WarehouseHeadquarter|null;
 
     /**
      * @param  array<string, mixed>  $data

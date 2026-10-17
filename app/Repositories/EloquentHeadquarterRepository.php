@@ -47,9 +47,9 @@ abstract class EloquentHeadquarterRepository implements HeadquarterRepositoryInt
             ->get();
     }
 
-    public function find(int $id): ShopHeadquarter|WarehouseHeadquarter|null
+    public function findForOrganization(int $organizationId, int $id): ShopHeadquarter|WarehouseHeadquarter|null
     {
-        return $this->query()->find($id);
+        return $this->query()->where('organization_id', $organizationId)->find($id);
     }
 
     public function create(int $organizationId, array $data): ShopHeadquarter|WarehouseHeadquarter

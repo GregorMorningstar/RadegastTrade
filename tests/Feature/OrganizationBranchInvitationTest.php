@@ -81,7 +81,7 @@ test('zaproszenie do placówki wymaga e-maila i telefonu, a siedziba musi należ
     $this->post($url($f['shop']->id), ['email' => 'a@example.com', 'phone' => '12'])->assertSessionHasErrors('phone');
 
     // a foreign headquarters and a missing one
-    $this->post($url($f['foreignHq']->id), ['email' => 'a@example.com', 'phone' => '600100200'])->assertForbidden();
+    $this->post($url($f['foreignHq']->id), ['email' => 'a@example.com', 'phone' => '600100200'])->assertNotFound();
     $this->post($url(999999), ['email' => 'a@example.com', 'phone' => '600100200'])->assertNotFound();
 
     expect(OrganizationInvitation::count())->toBe(0);
@@ -93,9 +93,9 @@ test('zaproszenie do placówki wysyłają tylko właściciel organizacji, nikt i
     $f = branchInviteFixture();
     $url = route('platform.organization.branches.invitations.store', ['type' => 'shops', 'headquarter' => $f['shop']->id]);
 
-    foreach (['manager', 'foreignOwner'] as $who) {
-        $this->actingAs($f[$who])->post($url, ['email' => 'a@example.com', 'phone' => '600100200'])->assertForbidden();
-    }
+    $this->actingAs($f['manager'])->post($url, ['email' => 'a@example.com', 'phone' => '600100200'])->assertForbidden();
+    // the owner of another organization does not even see that the headquarters exists
+    $this->actingAs($f['foreignOwner'])->post($url, ['email' => 'a@example.com', 'phone' => '600100200'])->assertNotFound();
     $this->actingAs(User::factory()->create(['role' => UserRole::Admin]))->post($url, ['email' => 'a@example.com', 'phone' => '600100200'])->assertForbidden();
 
     expect(OrganizationInvitation::count())->toBe(0);
@@ -130,5 +130,5 @@ test('strona placówek pokazuje siedziby i oczekujące zaproszenia do placówek,
 
     // someone else's invitation cannot be cancelled
     [$foreign] = OrganizationInvitation::issue($f['foreignHq']->organization, 'x@example.com', $f['foreignOwner'], UserRole::SHOP_LEADER, $f['foreignHq'], '+48600100209');
-    $this->delete(route('platform.organization.invitations.destroy', $foreign))->assertForbidden();
+    $this->delete(route('platform.organization.invitations.destroy', $foreign))->assertNotFound();
 });

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Settings\ApiKeyController;
 use App\Http\Controllers\Settings\AvatarController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
@@ -16,7 +17,7 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('settings/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('settings/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::post('settings/profile/avatar', [AvatarController::class, 'update'])->middleware('throttle:10,1')->name('profile.avatar.update');
+    Route::post('settings/profile/avatar', [AvatarController::class, 'update'])->middleware('throttle:10,1,s1')->name('profile.avatar.update');
     Route::delete('settings/profile/avatar', [AvatarController::class, 'destroy'])->name('profile.avatar.destroy');
 });
 
@@ -28,10 +29,24 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('security.edit');
 
     Route::put('settings/password', [SecurityController::class, 'update'])
-        ->middleware('throttle:6,1')
+        ->middleware('throttle:6,1,s2')
         ->name('user-password.update');
 
     Route::inertia('settings/appearance', 'settings/appearance')->name('appearance.edit');
+
+    // API keys of the connectors of units (who manages which unit: ApiKeyPolicy). The unit is in the URL:
+    // type (shops / warehouses), level (headquarters / branches) and its id.
+    Route::get('settings/api-key', [ApiKeyController::class, 'edit'])->name('api-key.edit');
+    Route::prefix('settings/api-key/{type}/{level}/{unit}')
+        ->whereIn('type', ['shops', 'warehouses'])
+        ->whereIn('level', ['headquarters', 'branches'])
+        ->whereNumber('unit')
+        ->group(function () {
+            Route::post('/', [ApiKeyController::class, 'store'])->middleware('throttle:10,60,s3')->name('api-key.store');
+            Route::post('reveal', [ApiKeyController::class, 'reveal'])->middleware('throttle:10,60,s6')->name('api-key.reveal');
+            Route::post('removal-code', [ApiKeyController::class, 'requestRemoval'])->middleware('throttle:10,60,s4')->name('api-key.removal-code');
+            Route::delete('/', [ApiKeyController::class, 'destroy'])->middleware('throttle:20,60,s5')->name('api-key.destroy');
+        });
 
     Route::get('settings/teams', [TeamController::class, 'index'])->name('teams.index');
     Route::post('settings/teams', [TeamController::class, 'store'])->name('teams.store');

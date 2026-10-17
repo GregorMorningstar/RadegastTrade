@@ -2,7 +2,9 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\Contracts\ApiKeyServiceInterface;
 use App\Services\Contracts\ChatServiceInterface;
+use App\Services\Contracts\UnitMembershipServiceInterface;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -44,6 +46,12 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $user,
             ],
+            // whether the person has an API key (the settings link and the button on the product list)
+            'apiKeyAllowed' => $user !== null && app(ApiKeyServiceInterface::class)->canManage($user),
+            // what kind of unit the person works in: the owner, a shop or a warehouse
+            'unitLabel' => $user?->role->unitLabel(),
+            // the headquarters and branches of the person, for the "Jednostka" section of the menu
+            'units' => fn () => $user ? app(UnitMembershipServiceInterface::class)->overview($user) : [],
             'canChat' => $user !== null && app(ChatServiceInterface::class)->canUse($user),
             'rolePanel' => $user ? [
                 'base' => $user->role->basePath(),

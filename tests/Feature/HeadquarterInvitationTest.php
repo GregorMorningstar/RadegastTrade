@@ -145,7 +145,7 @@ test('nie można zaprosić do siedziby innej organizacji', function () {
 
     $this->actingAs(organizationOwner())
         ->post(route('platform.organization.headquarters.invitations.store', ['shops', $foreignShop->id]), ['email' => 'a@example.com', 'phone' => '+48'.fake()->unique()->numerify('#########')])
-        ->assertForbidden();
+        ->assertNotFound();
 
     expect(OrganizationInvitation::count())->toBe(0);
     Notification::assertNothingSent();
@@ -161,7 +161,7 @@ test('nie można anulować zaproszenia innej organizacji', function () {
 
     $this->actingAs(organizationOwner())
         ->delete(route('platform.organization.invitations.destroy', $invitation->id))
-        ->assertForbidden();
+        ->assertNotFound();
 
     expect($invitation->fresh()->is_active)->toBeTrue();
 });

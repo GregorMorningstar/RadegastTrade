@@ -5,6 +5,7 @@ namespace App\Repositories;
 use App\Enums\HeadquarterType;
 use App\Enums\UnitLevel;
 use App\Enums\UnitPosition;
+use App\Enums\UserRole;
 use App\Models\ShopBranch;
 use App\Models\ShopHeadquarter;
 use App\Models\UnitMembership;
@@ -16,7 +17,7 @@ use Illuminate\Support\Facades\DB;
 
 class EloquentUnitMembershipRepository implements UnitMembershipRepositoryInterface
 {
-    public function findUnit(HeadquarterType $type, UnitLevel $level, int $unitId): ShopHeadquarter|WarehouseHeadquarter|ShopBranch|WarehouseBranch|null
+    public function findUnit(int $organizationId, HeadquarterType $type, UnitLevel $level, int $unitId): ShopHeadquarter|WarehouseHeadquarter|ShopBranch|WarehouseBranch|null
     {
         $model = match (true) {
             $level === UnitLevel::Headquarters && $type === HeadquarterType::Shop => ShopHeadquarter::class,
@@ -25,7 +26,52 @@ class EloquentUnitMembershipRepository implements UnitMembershipRepositoryInterf
             default => WarehouseBranch::class,
         };
 
-        return $model::find($unitId);
+        return $model::query()->where('organization_id', $organizationId)->find($unitId);
+    }
+
+    public function unitsOf(User $user): array
+    {
+        if ($user->organization_id === null) {
+            return [];
+        }
+
+        $units = [];
+
+        foreach (HeadquarterType::cases() as $type) {
+            $headquartersModel = $type === HeadquarterType::Shop ? ShopHeadquarter::class : WarehouseHeadquarter::class;
+            $branchModel = $type === HeadquarterType::Shop ? ShopBranch::class : WarehouseBranch::class;
+            $headquarterColumn = $type->headquarterColumn();
+            $branchColumn = $type->branchColumn();
+
+            $owner = $user->role === UserRole::ORGANIZATION_OWNER;
+            $manager = $user->role === $type->ownerRole();
+            $branchPerson = in_array($user->role, [$type->leaderRole(), $type->workerRole()], true);
+
+            if (! $owner && ! $manager && ! $branchPerson) {
+                continue;
+            }
+
+            $headquarters = $headquartersModel::query()
+                ->where('organization_id', $user->organization_id)
+                ->when(! $owner, fn ($query) => $query->whereKey($user->{$headquarterColumn}))
+                ->orderBy('name')->limit(20)->get(['id', 'name']);
+
+            foreach ($headquarters as $headquarter) {
+                $units[] = ['type' => $type->value, 'level' => 'headquarters', 'name' => $headquarter->name];
+
+                $branches = $branchModel::query()
+                    ->where('organization_id', $user->organization_id)
+                    ->where($headquarterColumn, $headquarter->id)
+                    ->when($branchPerson, fn ($query) => $query->whereKey($user->{$branchColumn}))
+                    ->orderBy('name')->limit(20)->get(['id', 'name']);
+
+                foreach ($branches as $branch) {
+                    $units[] = ['type' => $type->value, 'level' => 'branch', 'name' => $branch->name];
+                }
+            }
+        }
+
+        return $units;
     }
 
     public function forUser(User $user): ?UnitMembership
@@ -63,8 +109,16 @@ class EloquentUnitMembershipRepository implements UnitMembershipRepositoryInterf
             throw new \InvalidArgumentException('A headquarters has managers only.');
         }
 
+        if ($user->organization_id === null) {
+            throw new \InvalidArgumentException('A person without an organization cannot be placed in a unit.');
+        }
+
         return DB::transaction(function () use ($user, $type, $level, $unitId, $role) {
-            $unit = $this->findUnit($type, $level, $unitId);
+            $unit = $this->findUnit($user->organization_id, $type, $level, $unitId);
+
+            if ($unit === null) {
+                throw new \InvalidArgumentException('The unit is not in the organization of the person.');
+            }
 
             // the account follows: the role, the unit and (for a branch) its headquarters; the other group's columns are cleared
             $user->forceFill([

@@ -140,7 +140,7 @@ test('kierownik nie może anulować zaproszenia placówki z innej siedziby ani o
     // anulowanie cudzego zaproszenia
     $this->actingAs($manager)
         ->delete(route('shop.owner.branches.invitations.destroy', $foreignInvitation->id))
-        ->assertForbidden();
+        ->assertNotFound();
 
     // druga siedziba w tej samej organizacji
     $sibling = ShopHeadquarter::create(['organization_id' => $manager->organization_id, 'name' => 'Inny sklep']);

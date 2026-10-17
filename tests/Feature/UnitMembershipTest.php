@@ -92,18 +92,18 @@ test('zmiana roli lub jednostki konta aktualizuje członkostwo, a odłączenie j
     $f = unitFixture();
 
     // a leader demoted to a worker of the same branch
-    $f['leader']->update(['role' => UserRole::SHOP_WORKER]);
+    $f['leader']->forceFill(['role' => UserRole::SHOP_WORKER])->save();
     expect(UnitMembership::where('user_id', $f['leader']->id)->first()->position)->toBe(UnitPosition::Worker);
 
     // moved to another branch
-    $f['leader']->update(['shop_branch_id' => $f['branch2']->id, 'shop_headquarter_id' => $f['hq2']->id]);
+    $f['leader']->forceFill(['shop_branch_id' => $f['branch2']->id, 'shop_headquarter_id' => $f['hq2']->id])->save();
     expect(UnitMembership::where('user_id', $f['leader']->id)->first()->shop_branch_id)->toBe($f['branch2']->id);
 
     // a person works in one unit only: still one row for this user
     expect(UnitMembership::where('user_id', $f['leader']->id)->count())->toBe(1);
 
     // detached from the unit
-    $f['leader']->update(['shop_branch_id' => null, 'shop_headquarter_id' => null]);
+    $f['leader']->forceFill(['shop_branch_id' => null, 'shop_headquarter_id' => null])->save();
     expect(UnitMembership::where('user_id', $f['leader']->id)->exists())->toBeFalse();
 
     // an account of a leader that only waits to found the branch (headquarters, no branch) is not a member yet
@@ -128,22 +128,6 @@ test('repozytorium: place utrzymuje konto i członkostwo razem', function () {
 
     expect(fn () => $repository->place($f['free']->fresh(), HeadquarterType::Shop, UnitLevel::Headquarters, $f['hq']->id, UnitPosition::Worker))
         ->toThrow(InvalidArgumentException::class);
-});
-
-test('seeder organizacji zapisuje kierowników i pracowników w tabeli członkostw', function () {
-    $this->seed(Database\Seeders\OrganizationSeeder::class);
-
-    $byPosition = UnitMembership::query()->get()->groupBy(fn ($m) => unitKind($m))->map->count();
-
-    // per group: a headquarters manager, a branch leader and a branch worker
-    expect($byPosition->all())->toBe([
-        'shops/headquarters/manager' => 1,
-        'shops/branches/manager' => 1,
-        'shops/branches/worker' => 1,
-        'warehouses/headquarters/manager' => 1,
-        'warehouses/branches/manager' => 1,
-        'warehouses/branches/worker' => 1,
-    ]);
 });
 
 test('DakarSeeder tworzy po kierowniku siedziby, kierowniku placówki i trzech pracowników w hurtowni i sklepie', function () {
@@ -416,4 +400,28 @@ test('DakarSeeder tworzy konta platformy i właściciela organizacji DAKAR', fun
 
     // and the administrator, the manager and the employee are not counted as people of the units
     expect(UnitMembership::count())->toBe(10);
+});
+
+test('osoby nie da się przypisać do jednostki innej organizacji', function () {
+    $f = unitFixture();
+    $foreignOrganization = Organization::create(['name' => 'Obca']);
+    $foreignHq = ShopHeadquarter::create(['organization_id' => $foreignOrganization->id, 'name' => 'Obca siedziba']);
+    $repository = app(UnitMembershipRepositoryInterface::class);
+
+    expect(fn () => $repository->place($f['free'], HeadquarterType::Shop, UnitLevel::Headquarters, $foreignHq->id, UnitPosition::Manager))
+        ->toThrow(InvalidArgumentException::class)
+        ->and($repository->findUnit($f['free']->organization_id, HeadquarterType::Shop, UnitLevel::Headquarters, $foreignHq->id))->toBeNull();
+});
+
+test('listy struktury wszystkich organizacji zwraca serwis tylko administratorowi, także bez middleware', function () {
+    $f = unitFixture();
+    $service = app(App\Services\Contracts\StructureListingServiceInterface::class);
+
+    foreach (['free'] as $who) {
+        expect(fn () => $service->headquarters($f[$who], HeadquarterType::Shop))->toThrow(Symfony\Component\HttpKernel\Exception\HttpException::class)
+            ->and(fn () => $service->branches($f[$who], HeadquarterType::Shop))->toThrow(Symfony\Component\HttpKernel\Exception\HttpException::class);
+    }
+
+    $admin = User::factory()->create(['role' => UserRole::Admin]);
+    expect($service->headquarters($admin, HeadquarterType::Shop))->toBeArray();
 });

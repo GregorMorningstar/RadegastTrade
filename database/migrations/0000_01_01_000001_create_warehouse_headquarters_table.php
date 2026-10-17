@@ -20,7 +20,7 @@ return new class extends Migration
             // belongs to exactly one organization.
             $table->foreignId('organization_id')
                 ->constrained()
-                ->cascadeOnDelete();
+                ->restrictOnDelete();
 
             // Name of the warehouse headquarters (unique within the organization)
             $table->string('name');
@@ -64,6 +64,9 @@ return new class extends Migration
 
             // The same name cannot be used twice within one organization
             $table->unique(['organization_id', 'name']);
+
+            // the target of the composite key of the branches (a branch is in the same organization as its headquarters)
+            $table->unique(['organization_id', 'id']);
         });
     }
 

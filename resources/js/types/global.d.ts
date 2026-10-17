@@ -13,6 +13,9 @@ declare module '@inertiajs/core' {
             name: string;
             auth: Auth;
             canChat: boolean;
+            apiKeyAllowed: boolean;
+            unitLabel: string | null;
+            units: { type: string; level: 'headquarters' | 'branch'; name: string }[];
             rolePanel: { base: string; name: string } | null;
             sidebarOpen: boolean;
             currentTeam: Team | null;

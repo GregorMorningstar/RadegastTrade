@@ -15,11 +15,20 @@ use App\Models\WarehouseHeadquarter;
 interface UnitMembershipRepositoryInterface
 {
     /**
-     * The unit (headquarters or branch) of the given type, or null when it does not exist.
+     * The unit (headquarters or branch) of the given type in the organization, or null when it does not exist there.
      */
-    public function findUnit(HeadquarterType $type, UnitLevel $level, int $unitId): ShopHeadquarter|WarehouseHeadquarter|ShopBranch|WarehouseBranch|null;
+    public function findUnit(int $organizationId, HeadquarterType $type, UnitLevel $level, int $unitId): ShopHeadquarter|WarehouseHeadquarter|ShopBranch|WarehouseBranch|null;
 
     public function forUser(User $user): ?UnitMembership;
+
+    /**
+     * The headquarters and branches of the organization that a person works with, at most 20 of each: the owner of the
+     * organization has every headquarters (with their branches), a headquarters manager their headquarters and its
+     * branches, a branch leader or worker their headquarters and branch.
+     *
+     * \return list<array{type: string, level: string, name: string}>
+     */
+    public function unitsOf(User $user): array;
 
     /**
      * A person of the organization who works in the shop / warehouse structure (a headquarters manager, a branch
@@ -38,7 +47,8 @@ interface UnitMembershipRepositoryInterface
      * and the unit columns of the account follow (a headquarters manager, a branch manager = leader, a branch worker),
      * and the headquarters of a branch is set as well. A headquarters has managers only.
      *
-     * @throws \InvalidArgumentException for a worker of a headquarters
+     * @throws \InvalidArgumentException for a worker of a headquarters, for a person without an organization and for a
+     *                                   unit that is not in the person's organization
      */
     public function place(User $user, HeadquarterType $type, UnitLevel $level, int $unitId, UnitPosition $position): UnitMembership;
 

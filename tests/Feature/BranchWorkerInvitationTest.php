@@ -116,8 +116,9 @@ test('kierownik nie anuluje zaproszeń z innej placówki ani organizacji, a zapr
 
     $this->actingAs($f['leader']);
 
-    foreach ([$siblingInvitation, $foreignInvitation, $leaderInvitation] as $invitation) {
-        $this->delete(route('shop.leader.workers.invitations.destroy', $invitation->id))->assertForbidden();
+    // another branch of the organization: forbidden; another organization: it does not exist for the leader
+    foreach ([[$siblingInvitation, 403], [$foreignInvitation, 404], [$leaderInvitation, 403]] as [$invitation, $status]) {
+        $this->delete(route('shop.leader.workers.invitations.destroy', $invitation->id))->assertStatus($status);
         expect($invitation->fresh()->is_active)->toBeTrue();
     }
 });

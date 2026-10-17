@@ -50,17 +50,16 @@ class HeadquarterService implements HeadquarterServiceInterface
     }
 
     /**
-     * The headquarters from the URL, provided it belongs to the logged-in user's organization.
-     * A missing headquarters is a 404, and someone else's headquarters (different organization_id) is a 403.
+     * The headquarters from the URL, provided it belongs to the logged-in user's organization. A missing one and
+     * one of another organization look the same (404), so the existence of foreign units is not revealed.
      */
     public function findOwned(User $owner, HeadquarterType $type, int $id): ShopHeadquarter|WarehouseHeadquarter
     {
         $organization = $this->organizationOf($owner);
 
-        $headquarter = $this->repository($type)->find($id);
+        $headquarter = $this->repository($type)->findForOrganization($organization->id, $id);
 
         abort_if($headquarter === null, 404);
-        abort_unless($headquarter->organization_id === $organization->id, 403, 'Ta siedziba należy do innej organizacji.');
 
         return $headquarter;
     }

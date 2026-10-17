@@ -17,12 +17,12 @@ return new class extends Migration
             // Organization the branch belongs to (taken from the invitation, never from a form)
             $table->foreignId('organization_id')
                 ->constrained()
-                ->cascadeOnDelete();
+                ->restrictOnDelete();
 
             // Warehouse headquarters the branch belongs to
             $table->foreignId('warehouse_headquarter_id')
                 ->constrained()
-                ->cascadeOnDelete();
+                ->restrictOnDelete();
 
             // Name of the branch (unique within the headquarters)
             $table->string('name');
@@ -64,6 +64,12 @@ return new class extends Migration
 
             // The same name cannot be used twice within one headquarters
             $table->unique(['warehouse_headquarter_id', 'name']);
+
+            // the branch is in the same organization as its headquarters (checked by the database, not only the application)
+            $table->foreign(['organization_id', 'warehouse_headquarter_id'], 'warehouse_branches_org_hq_foreign')
+                ->references(['organization_id', 'id'])
+                ->on('warehouse_headquarters')
+                ->restrictOnDelete();
         });
     }
 

@@ -43,7 +43,8 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string|null $last_login_timezone
  * @property-read Carbon|null $last_login_local
  */
-#[Fillable(['name', 'email', 'phone', 'avatar_path', 'last_seen_at', 'is_active', 'deactivated_by', 'deactivated_at', 'password', 'current_team_id', 'role', 'barcode', 'organization_id', 'shop_headquarter_id', 'warehouse_headquarter_id', 'shop_branch_id', 'warehouse_branch_id', 'terms_accepted_at', 'privacy_accepted_at', 'last_login_at', 'last_login_timezone'])]
+// Role, organization, unit, activity and barcode are set by the backend (forceFill), never by mass assignment
+#[Fillable(['name', 'email', 'phone', 'avatar_path', 'last_seen_at', 'password', 'current_team_id', 'terms_accepted_at', 'privacy_accepted_at', 'last_login_at', 'last_login_timezone'])]
 #[ObservedBy(UserObserver::class)]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements MustVerifyEmail

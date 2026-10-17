@@ -65,7 +65,7 @@ test('sygnał pisania działa tylko w obrębie organizacji', function () {
     Event::fake([UserTyping::class]);
     $f = typingFixture();
 
-    $this->actingAs($f['a'])->postJson(route('chat.typing', $f['outsider']))->assertForbidden();
+    $this->actingAs($f['a'])->postJson(route('chat.typing', $f['outsider']))->assertNotFound();
     $this->postJson(route('chat.typing', $f['a']))->assertForbidden();
 
     $this->actingAs(User::factory()->create(['role' => UserRole::Employee]))

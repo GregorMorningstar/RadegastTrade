@@ -37,11 +37,12 @@ class ChatService implements ChatServiceInterface
      */
     public function ensureCanChat(User $me, User $other): void
     {
-        abort_unless(
-            $this->canUse($me) && $me->id !== $other->id && $this->canTalk($me, $other) && $this->allowedForInactive($me, $other),
-            403,
-            'Możesz rozmawiać tylko z osobami z Twojej organizacji.',
-        );
+        abort_unless($this->canUse($me) && $me->id !== $other->id, 403, 'Możesz rozmawiać tylko z osobami z Twojej organizacji.');
+
+        // a person of another organization does not exist for the sender (404, so ids cannot be probed)
+        abort_unless($this->canTalk($me, $other), 404);
+
+        abort_unless($this->allowedForInactive($me, $other), 403, 'Konto jest wyłączone: możesz pisać tylko do osoby, która je wyłączyła, i do administratorów.');
     }
 
     /**

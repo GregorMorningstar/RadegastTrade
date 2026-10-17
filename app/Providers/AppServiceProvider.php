@@ -2,19 +2,28 @@
 
 namespace App\Providers;
 
+use App\Repositories\Contracts\ApiKeyRepositoryInterface;
+use App\Repositories\Contracts\SyncedDataRepositoryInterface;
 use App\Repositories\Contracts\BranchRepositoryInterface;
 use App\Repositories\Contracts\HeadquarterManagerRepositoryInterface;
 use App\Repositories\Contracts\HeadquarterRepositoryInterface;
 use App\Repositories\Contracts\NipRegistryRepositoryInterface;
 use App\Repositories\Contracts\OrganizationInvitationRepositoryInterface;
 use App\Repositories\Contracts\OrganizationMemberRepositoryInterface;
+use App\Repositories\Contracts\ProductRepositoryInterface;
 use App\Repositories\Contracts\TaskRepositoryInterface;
 use App\Repositories\Contracts\UnitMembershipRepositoryInterface;
 use App\Repositories\EloquentHeadquarterManagerRepository;
 use App\Repositories\EloquentOrganizationInvitationRepository;
+use App\Repositories\EloquentApiKeyRepository;
+use App\Repositories\EloquentSyncedDataRepository;
+use App\Repositories\EloquentProductRepository;
 use App\Repositories\EloquentTaskRepository;
 use App\Repositories\EloquentUnitMembershipRepository;
 use App\Services\Contracts\TaskServiceInterface;
+use App\Services\ApiKeyService;
+use App\Services\SyncService;
+use App\Services\ProductService;
 use App\Services\TaskService;
 use App\Services\Contracts\UnitMembershipServiceInterface;
 use App\Services\UnitMembershipService;
@@ -39,6 +48,9 @@ use App\Services\Contracts\ChatServiceInterface;
 use App\Services\Contracts\HeadquarterInvitationServiceInterface;
 use App\Services\Contracts\HeadquarterServiceInterface;
 use App\Services\Contracts\NipServiceInterface;
+use App\Services\Contracts\ApiKeyServiceInterface;
+use App\Services\Contracts\SyncServiceInterface;
+use App\Services\Contracts\ProductServiceInterface;
 use App\Services\Contracts\StructureListingServiceInterface;
 use App\Services\Contracts\TeamMembersServiceInterface;
 use App\Services\HeadquarterInvitationService;
@@ -47,9 +59,13 @@ use App\Services\NipService;
 use App\Services\StructureListingService;
 use App\Services\TeamMembersService;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
@@ -88,6 +104,12 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(UnitMembershipServiceInterface::class, UnitMembershipService::class);
         $this->app->bind(TaskRepositoryInterface::class, EloquentTaskRepository::class);
         $this->app->bind(TaskServiceInterface::class, TaskService::class);
+        $this->app->bind(ProductRepositoryInterface::class, EloquentProductRepository::class);
+        $this->app->bind(ProductServiceInterface::class, ProductService::class);
+        $this->app->bind(ApiKeyRepositoryInterface::class, EloquentApiKeyRepository::class);
+        $this->app->bind(ApiKeyServiceInterface::class, ApiKeyService::class);
+        $this->app->bind(SyncedDataRepositoryInterface::class, EloquentSyncedDataRepository::class);
+        $this->app->bind(SyncServiceInterface::class, SyncService::class);
         $this->app->bind(BranchServiceInterface::class, BranchService::class);
         $this->app->bind(BranchWorkerServiceInterface::class, BranchWorkerService::class);
         $this->app->bind(ChatServiceInterface::class, ChatService::class);
@@ -131,6 +153,12 @@ class AppServiceProvider extends ServiceProvider
     protected function configureDefaults(): void
     {
         Date::use(CarbonImmutable::class);
+
+        // connectors of units: the limit is per key (a request is let in only after its key is known), not per address
+        RateLimiter::for('connector', fn (Request $request) => Limit::perMinute(120)->by('connector:'.($request->attributes->get('api_key')?->id ?? $request->ip())));
+
+        // outside production a field missing from $fillable is an error, not silently dropped
+        Model::preventSilentlyDiscardingAttributes(! app()->isProduction());
 
         DB::prohibitDestructiveCommands(
             app()->isProduction(),

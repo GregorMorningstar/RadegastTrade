@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
 
             // Chat is limited to people of one organization: both users must belong to it
-            $table->foreignId('organization_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('organization_id')->constrained()->restrictOnDelete();
 
             $table->foreignId('sender_id')->constrained('users')->cascadeOnDelete();
             $table->foreignId('recipient_id')->constrained('users')->cascadeOnDelete();
