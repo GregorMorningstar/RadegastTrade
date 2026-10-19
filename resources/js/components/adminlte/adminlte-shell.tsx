@@ -2,6 +2,9 @@ import { Link, router, usePage } from "@inertiajs/react";
 import {
     Building2,
     ChevronRight,
+    FileText,
+    Handshake,
+    KeyRound,
     LayoutDashboard,
     LayoutGrid,
     ListTodo,
@@ -11,7 +14,9 @@ import {
     Network,
     Package,
     Settings,
+    ShoppingCart,
     Store,
+    Tag,
     Users,
     UserCircle,
     Warehouse,
@@ -224,6 +229,20 @@ export default function AdminLteShell({
                       icon: Network,
                   },
                   { title: "Zespół", href: `${base}/team`, icon: Users },
+              ]
+            : []),
+        // Handel: oferty, zamówienia, współpraca z kontrahentami (osoby z organizacją i jednostką)
+        ...(props.trade?.allowed
+            ? [
+                  { section: "Handel", title: "Oferty dostępne", href: "/trade/available", icon: Tag },
+                  ...(props.trade.offers ? [{ title: "Moje oferty", href: "/trade/offers", icon: FileText }] : []),
+                  { title: "Zamówienia", href: "/trade/orders", icon: ShoppingCart },
+                  ...(props.trade.manage
+                      ? [
+                            { title: "Współpraca", href: "/trade/partners", icon: Handshake },
+                            { title: "Uprawnienia jednostki", href: "/trade/permissions", icon: KeyRound },
+                        ]
+                      : []),
               ]
             : []),
         // Czat z osobami z organizacji (dla każdej roli)

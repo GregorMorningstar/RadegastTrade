@@ -53,6 +53,8 @@ void createInertiaApp({
                 return LegalLayout;
             case name.startsWith('auth/'):
                 return AuthLayout;
+            case name.startsWith('trade/'):
+                return RoleLayout;
             case name.startsWith('chat/'):
             case name.startsWith('settings/'):
             case name.startsWith('teams/'):

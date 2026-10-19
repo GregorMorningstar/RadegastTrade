@@ -18,6 +18,7 @@ use App\Http\Controllers\UnitMembershipController;
 use App\Http\Controllers\Platform;
 use App\Http\Controllers\Shop;
 use App\Http\Controllers\Teams\TeamInvitationController;
+use App\Http\Controllers\Trade;
 use App\Http\Controllers\Warehouse;
 use App\Http\Middleware\EnsureTeamMembership;
 use Illuminate\Support\Facades\Route;
@@ -41,13 +42,13 @@ Route::prefix('platform')
     ->group(function () {
         // Preview of the people in an organization's shops and warehouses (administrator and manager)
         Route::get('organizations/{organization}/members', Platform\OrganizationMembersController::class)
-            ->middleware(['role:admin,manager,employee', 'throttle:120,1,w1'])
+            ->middleware(['role:admin,manager', 'throttle:120,1,w1'])
             ->name('organizations.members');
 
         // Tree of all shop or warehouse headquarters (administrator, manager and employee)
         Route::get('headquarters/{type}/tree', Platform\HeadquartersTreeController::class)
             ->whereIn('type', ['shops', 'warehouses'])
-            ->middleware(['role:admin,manager,employee', 'throttle:120,1,w2'])
+            ->middleware(['role:admin,manager', 'throttle:120,1,w2'])
             ->name('headquarters.tree');
 
         Route::prefix('admin')->name('admin.')->middleware('role:admin')->group(function () {
@@ -292,6 +293,11 @@ Route::middleware(['auth'])->group(function () {
         ->middleware('throttle:10,1,w45')
         ->name('organization-invitations.store');
 
+});
+
+// Team invitations carry no second factor, so only a person whose e-mail address is verified may answer them (an address
+// can be changed in the profile; without this one could take over the invitations of any address that nobody registered yet)
+Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('invitations/{invitation}/accept', [TeamInvitationController::class, 'accept'])->name('invitations.accept');
     Route::delete('invitations/{invitation}', [TeamInvitationController::class, 'decline'])->name('invitations.decline');
 });
@@ -315,6 +321,60 @@ Route::middleware(['auth', 'verified'])->prefix('chat')->name('chat.')->group(fu
         ->whereNumber('user')
         ->middleware('throttle:60,1,w47')
         ->name('send');
+});
+
+// Trade module: offers, cooperation between organizations, orders, who may order for a unit. The routes are the same for
+// every role; what a person may see and do is decided by the policies and the visibility classes (never by the URL).
+Route::middleware(['auth', 'verified'])->prefix('trade')->name('trade.')->group(function () {
+    // own offers (the units the person manages)
+    Route::get('offers', [Trade\OfferController::class, 'index'])->name('offers.index');
+    Route::get('offers/create', [Trade\OfferController::class, 'create'])->name('offers.create');
+    Route::post('offers', [Trade\OfferController::class, 'store'])->middleware('throttle:30,1,w60')->name('offers.store');
+    Route::prefix('offers/{offer}')->whereNumber('offer')->group(function () {
+        Route::get('/', [Trade\OfferController::class, 'show'])->name('offers.show');
+        Route::get('edit', [Trade\OfferController::class, 'edit'])->name('offers.edit');
+        Route::put('/', [Trade\OfferController::class, 'update'])->middleware('throttle:60,1,w61')->name('offers.update');
+        Route::post('publish', [Trade\OfferController::class, 'publish'])->middleware('throttle:30,1,w62')->name('offers.publish');
+        Route::post('internal', [Trade\OfferController::class, 'internal'])->middleware('throttle:30,1,w63')->name('offers.internal');
+        Route::post('withdraw', [Trade\OfferController::class, 'withdraw'])->middleware('throttle:30,1,w64')->name('offers.withdraw');
+        Route::post('archive', [Trade\OfferController::class, 'archive'])->middleware('throttle:30,1,w65')->name('offers.archive');
+        Route::post('shares', [Trade\OfferController::class, 'share'])->middleware('throttle:30,1,w66')->name('offers.share');
+        Route::delete('shares/{share}', [Trade\OfferController::class, 'revokeShare'])->whereNumber('share')->name('offers.shares.destroy');
+        Route::post('attachments', [Trade\OfferController::class, 'attach'])->middleware('throttle:20,1,w67')->name('offers.attachments.store');
+        Route::delete('attachments/{attachment}', [Trade\OfferController::class, 'removeAttachment'])->whereNumber('attachment')->name('offers.attachments.destroy');
+    });
+    Route::get('attachments/{attachment}', [Trade\OfferController::class, 'download'])->whereNumber('attachment')->middleware('throttle:120,1,w68')->name('attachments.download');
+
+    // offers available to the person (inside the organization and shared with their units)
+    Route::get('available', [Trade\AvailableOfferController::class, 'index'])->name('available.index');
+    Route::get('available/{offer}', [Trade\AvailableOfferController::class, 'show'])->whereNumber('offer')->name('available.show');
+
+    // cooperation between organizations
+    Route::get('partners', [Trade\PartnerController::class, 'index'])->name('partners.index');
+    Route::post('partners/invitations', [Trade\PartnerController::class, 'invite'])->middleware('throttle:10,60,w69')->name('partners.invite');
+    Route::delete('partners/invitations/{invitation}', [Trade\PartnerController::class, 'cancel'])->whereNumber('invitation')->name('partners.invitations.cancel');
+    Route::get('invitations/{token}', [Trade\PartnerController::class, 'showInvitation'])->middleware('throttle:30,1,w70')->name('invitations.show');
+    Route::post('invitations/{token}/accept', [Trade\PartnerController::class, 'accept'])->middleware('throttle:10,1,w71')->name('invitations.accept');
+    Route::post('invitations/{token}/reject', [Trade\PartnerController::class, 'reject'])->middleware('throttle:10,1,w72')->name('invitations.reject');
+    Route::prefix('partners/{relationship}')->whereNumber('relationship')->group(function () {
+        Route::post('suspend', [Trade\PartnerController::class, 'suspend'])->name('partners.suspend');
+        Route::post('resume', [Trade\PartnerController::class, 'resume'])->name('partners.resume');
+        Route::post('end', [Trade\PartnerController::class, 'end'])->name('partners.end');
+        Route::delete('units', [Trade\PartnerController::class, 'revokeUnit'])->name('partners.units.destroy');
+    });
+
+    // orders
+    Route::get('orders', [Trade\OrderController::class, 'index'])->name('orders.index');
+    Route::post('orders', [Trade\OrderController::class, 'store'])->middleware('throttle:20,1,w73')->name('orders.store');
+    Route::get('orders/{order}', [Trade\OrderController::class, 'show'])->whereNumber('order')->name('orders.show');
+    Route::post('orders/{order}/status', [Trade\OrderController::class, 'transition'])->whereNumber('order')->middleware('throttle:60,1,w74')->name('orders.transition');
+
+    // who may place orders for a unit
+    Route::get('permissions', [Trade\UnitOrderPermissionController::class, 'index'])->name('permissions.index');
+    Route::post('permissions', [Trade\UnitOrderPermissionController::class, 'store'])->middleware('throttle:10,10,w75')->name('permissions.store');
+    Route::post('permissions/confirm', [Trade\UnitOrderPermissionController::class, 'confirm'])->middleware('throttle:20,10,w76')->name('permissions.confirm');
+    Route::delete('permissions/pending', [Trade\UnitOrderPermissionController::class, 'cancel'])->name('permissions.cancel');
+    Route::delete('permissions/{permission}', [Trade\UnitOrderPermissionController::class, 'destroy'])->whereNumber('permission')->name('permissions.destroy');
 });
 
 require __DIR__.'/settings.php';

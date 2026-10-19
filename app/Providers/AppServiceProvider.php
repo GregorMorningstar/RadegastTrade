@@ -58,6 +58,7 @@ use App\Services\HeadquarterService;
 use App\Services\NipService;
 use App\Services\StructureListingService;
 use App\Services\TeamMembersService;
+use App\Support\TrustedUrl;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\DevCommands;
@@ -157,6 +158,9 @@ class AppServiceProvider extends ServiceProvider
     protected function configureDefaults(): void
     {
         Date::use(CarbonImmutable::class);
+
+        // generated links (e-mails) point at APP_URL in production, not at whatever Host header the request came with
+        TrustedUrl::pin(config('app.url'), app()->isProduction());
 
         // connectors of units: the limit is per key (a request is let in only after its key is known), not per address
         RateLimiter::for('connector', fn (Request $request) => Limit::perMinute(120)->by('connector:'.($request->attributes->get('api_key')?->id ?? $request->ip())));

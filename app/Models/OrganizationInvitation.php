@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
@@ -85,6 +86,41 @@ class OrganizationInvitation extends Model
     public function checkCode(string $code): bool
     {
         return Hash::check($code, $this->verification_code);
+    }
+
+    /**
+     * Tries a key from the e-mail under a lock on the invitation's row. Guesses are therefore counted one after another:
+     * a burst of parallel requests cannot try more keys than the limit before the invitation locks (counting outside a
+     * lock lets all of them through, since each one still sees the old counter).
+     *
+     * @return 'ok'|'wrong'|'locked'|'unavailable' unavailable: accepted, withdrawn or expired meanwhile
+     */
+    public function attemptCode(string $code): string
+    {
+        $result = DB::transaction(function () use ($code) {
+            $current = static::query()->whereKey($this->getKey())->lockForUpdate()->first();
+
+            if ($current === null || ! $current->is_active || $current->accepted_at !== null || $current->isExpired()) {
+                return 'unavailable';
+            }
+
+            if ($current->isLocked()) {
+                return 'locked';
+            }
+
+            if ($current->checkCode($code)) {
+                return 'ok';
+            }
+
+            $current->increment('attempts');
+
+            // increment() also raises the attribute in memory
+            return $current->attempts >= self::MAX_ATTEMPTS ? 'locked' : 'wrong';
+        });
+
+        $this->refresh();
+
+        return $result;
     }
 
     public function isPending(): bool

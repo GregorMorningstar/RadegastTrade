@@ -20,7 +20,7 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 class OrganizationMembersService implements OrganizationMembersServiceInterface
 {
     /** Roles allowed to preview the structure. */
-    private const VIEWERS = [UserRole::Admin, UserRole::Manager, UserRole::Employee];
+    private const VIEWERS = [UserRole::Admin, UserRole::Manager];
 
     public function __construct(private readonly OrganizationMemberRepositoryInterface $members)
     {

@@ -41,6 +41,14 @@ class DakarSeeder extends Seeder
 
     public function run(): void
     {
+        // the accounts have a password that is written in this file: never on a server that is not a development machine
+        // (a whitelist, not "everything but production": a staging host is reachable too)
+        if (! app()->environment(['local', 'testing'])) {
+            $this->command?->warn('DakarSeeder pominięty: konta z jawnym hasłem tworzymy tylko w środowisku local lub testing.');
+
+            return;
+        }
+
         $organization = Organization::firstOrCreate(['NIP' => self::NIP], [
             'name' => self::NAME,
             'email' => 'organizacion_dakar@test.pl',

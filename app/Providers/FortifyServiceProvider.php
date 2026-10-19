@@ -5,6 +5,8 @@ namespace App\Providers;
 use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\ResetUserPassword;
 use App\Http\Responses\LoginResponse;
+use App\Http\Responses\NeutralPasswordResetLinkResponse;
+use Laravel\Fortify\Contracts\FailedPasswordResetLinkRequestResponse;
 use App\Http\Responses\RegisterResponse;
 use App\Http\Responses\TwoFactorLoginResponse;
 use App\Http\Responses\VerifyEmailResponse;
@@ -34,6 +36,9 @@ class FortifyServiceProvider extends ServiceProvider
         $this->app->singleton(RegisterResponseContract::class, RegisterResponse::class);
         $this->app->singleton(TwoFactorLoginResponseContract::class, TwoFactorLoginResponse::class);
         $this->app->singleton(VerifyEmailResponseContract::class, VerifyEmailResponse::class);
+
+        // an unknown address gets the same answer as a known one (no way to check who has an account)
+        $this->app->bind(FailedPasswordResetLinkRequestResponse::class, NeutralPasswordResetLinkResponse::class);
     }
 
     /**
@@ -112,9 +117,12 @@ class FortifyServiceProvider extends ServiceProvider
         RateLimiter::for('login', function (Request $request) {
             $throttleKey = Str::transliterate(Str::lower($request->input(Fortify::username())).'|'.$request->ip());
 
-            return Limit::perMinute(5)->by($throttleKey);
+            // per account and address (guessing one password), and per address alone (trying many accounts from one machine)
+            return [
+                Limit::perMinute(5)->by($throttleKey),
+                Limit::perMinute(30)->by('login-ip:'.$request->ip()),
+            ];
         });
-
     }
 
     /**

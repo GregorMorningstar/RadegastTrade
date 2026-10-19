@@ -5,8 +5,10 @@ use App\Events\MessageSent;
 use App\Models\Message;
 use App\Models\Organization;
 use App\Models\User;
+use App\Notifications\AvatarChangeCodeNotification;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -157,21 +159,62 @@ test('strona czatu jest dostępna po zalogowaniu, dla konta bez organizacji z in
         ->assertInertia(fn ($page) => $page->where('canChat', false));
 });
 
-test('zdjęcie profilowe: domyślny awatar, wgranie, zmiana i usunięcie', function () {
+/** A real PNG of the given size built without the GD extension (a flat grey picture). */
+function avatarPng(int $width, int $height, string $name = 'a.png'): UploadedFile
+{
+    $chunk = fn (string $type, string $data) => pack('N', strlen($data)).$type.$data.pack('N', crc32($type.$data));
+    $rows = str_repeat("\x00".str_repeat("\x80\x80\x80", $width), $height);
+
+    $png = "\x89PNG\r\n\x1a\n"
+        .$chunk('IHDR', pack('NNCCCCC', $width, $height, 8, 2, 0, 0, 0))
+        .$chunk('IDAT', gzcompress($rows))
+        .$chunk('IEND', '');
+
+    return UploadedFile::fake()->createWithContent($name, $png);
+}
+
+/** Sends the photo and returns the confirmation code from the (faked) e-mail. */
+function avatarCode(User $user, UploadedFile $file): string
+{
+    test()->actingAs($user)->post(route('profile.avatar.update'), ['avatar' => $file])->assertRedirect(route('profile.edit'))->assertSessionHasNoErrors();
+
+    $code = null;
+    Notification::assertSentTo($user, AvatarChangeCodeNotification::class, function (AvatarChangeCodeNotification $notification) use (&$code) {
+        $code = $notification->code;
+
+        return true;
+    });
+
+    return $code;
+}
+
+test('zdjęcie profilowe: domyślny awatar, wgranie z kodem z e-maila, zmiana i usunięcie', function () {
     Storage::fake('public');
+    Storage::fake('local');
+    Notification::fake();
     $user = User::factory()->create();
 
     expect($user->avatar_url)->toEndWith('/images/default-avatar.svg');
 
-    $this->actingAs($user)
-        ->post(route('profile.avatar.update'), ['avatar' => UploadedFile::fake()->image('a.png', 200, 200)])
-        ->assertRedirect(route('profile.edit'));
+    // the photo waits on the private disk; nothing is saved until the code from the e-mail is given
+    $code = avatarCode($user, avatarPng(200, 200));
+    expect($user->refresh()->avatar_path)->toBeNull()->and(Storage::disk('local')->allFiles('avatars-pending'))->toHaveCount(1);
+    $this->get(route('profile.edit'))->assertInertia(fn ($page) => $page->where('avatarPending', true));
 
+    // a wrong code does not save the photo
+    $this->post(route('profile.avatar.confirm'), ['code' => $code === '123456' ? '654321' : '123456'])->assertSessionHasErrors('code');
+    expect($user->refresh()->avatar_path)->toBeNull();
+
+    $this->post(route('profile.avatar.confirm'), ['code' => $code])->assertRedirect(route('profile.edit'));
     $first = $user->refresh()->avatar_path;
     Storage::disk('public')->assertExists($first);
-    expect($user->avatar_url)->toContain($first);
+    expect($user->avatar_url)->toContain($first)->and(Storage::disk('local')->allFiles('avatars-pending'))->toBe([]);
+    $this->get(route('profile.edit'))->assertInertia(fn ($page) => $page->where('avatarPending', false));
 
-    $this->post(route('profile.avatar.update'), ['avatar' => UploadedFile::fake()->image('b.jpg', 300, 300)]);
+    // a change needs a code again, and removes the old file only after it is confirmed
+    $code = avatarCode($user, avatarPng(300, 300, 'b.png'));
+    Storage::disk('public')->assertExists($first);
+    $this->post(route('profile.avatar.confirm'), ['code' => $code])->assertRedirect(route('profile.edit'));
     $second = $user->refresh()->avatar_path;
     Storage::disk('public')->assertMissing($first);
     Storage::disk('public')->assertExists($second);
@@ -181,16 +224,47 @@ test('zdjęcie profilowe: domyślny awatar, wgranie, zmiana i usunięcie', funct
     expect($user->refresh()->avatar_path)->toBeNull()->and($user->avatar_url)->toEndWith('default-avatar.svg');
 });
 
+test('kod zmiany zdjęcia działa tylko dla osoby, która go dostała, i blokuje się po błędnych próbach', function () {
+    Storage::fake('public');
+    Storage::fake('local');
+    Notification::fake();
+    $user = User::factory()->create();
+    $other = User::factory()->create();
+
+    $code = avatarCode($user, avatarPng(200, 200));
+
+    // somebody else has no pending photo; the code of one person does nothing for another
+    $this->actingAs($other)->post(route('profile.avatar.confirm'), ['code' => $code])->assertSessionHasErrors('code');
+    expect($other->refresh()->avatar_path)->toBeNull();
+
+    // five wrong codes drop the pending photo; even the right code is then useless
+    $wrong = $code === '000000' ? '111111' : '000000';
+    foreach (range(1, 5) as $attempt) {
+        $this->actingAs($user)->post(route('profile.avatar.confirm'), ['code' => $wrong])->assertSessionHasErrors('code');
+    }
+
+    $this->post(route('profile.avatar.confirm'), ['code' => $code])->assertSessionHasErrors('code');
+    expect($user->refresh()->avatar_path)->toBeNull()->and(Storage::disk('local')->allFiles('avatars-pending'))->toBe([]);
+
+    // changing one's mind drops the pending photo too
+    avatarCode($user, avatarPng(200, 200));
+    $this->delete(route('profile.avatar.cancel'))->assertRedirect(route('profile.edit'));
+    expect(Storage::disk('local')->allFiles('avatars-pending'))->toBe([]);
+});
+
 test('zdjęcie profilowe musi być obrazem o rozsądnym rozmiarze', function (callable $file) {
     Storage::fake('public');
+    Storage::fake('local');
+    Notification::fake();
     $user = User::factory()->create();
 
     $this->actingAs($user)->post(route('profile.avatar.update'), ['avatar' => $file()])->assertSessionHasErrors('avatar');
     expect($user->refresh()->avatar_path)->toBeNull();
+    Notification::assertNothingSent();
 })->with([
     'plik tekstowy' => [fn () => UploadedFile::fake()->create('a.txt', 10, 'text/plain')],
-    'za duży' => [fn () => UploadedFile::fake()->image('a.png', 200, 200)->size(3000)],
-    'za mały' => [fn () => UploadedFile::fake()->image('a.png', 20, 20)],
+    'za duży' => [fn () => avatarPng(200, 200)->size(3000)],
+    'za mały' => [fn () => avatarPng(20, 20)],
     'skrypt jako obraz' => [fn () => UploadedFile::fake()->create('a.php', 10, 'application/x-php')],
 ]);
 

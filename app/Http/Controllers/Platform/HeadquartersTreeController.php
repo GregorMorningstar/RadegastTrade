@@ -10,7 +10,7 @@ use Illuminate\Http\Request;
 
 /**
  * Tree of all shop or warehouse headquarters with their branches and people
- * (administrator, manager and employee only).
+ * (administrator and manager only).
  */
 class HeadquartersTreeController extends Controller
 {

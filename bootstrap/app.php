@@ -5,7 +5,9 @@ use App\Http\Middleware\EnsureUserHasRole;
 use App\Http\Middleware\EnsureUserIsActive;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SetTeamUrlDefaults;
+use App\Http\Middleware\ThrottleAuthEndpoints;
 use App\Http\Middleware\TouchLastSeen;
 use App\Support\ErrorPage;
 use Illuminate\Foundation\Application;
@@ -26,7 +28,21 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
+        // Behind a load balancer or a reverse proxy the client address (rate limits, audit log) is the proxy's unless the
+        // proxy is trusted. Nothing is trusted by default: list the proxies in TRUSTED_PROXIES (comma separated, or "*"
+        // only when the application is reachable through them alone).
+        $proxies = env('TRUSTED_PROXIES');
+
+        if (is_string($proxies) && trim($proxies) !== '') {
+            $middleware->trustProxies(at: trim($proxies) === '*' ? '*' : array_map('trim', explode(',', $proxies)));
+        }
+
+        // a changed password ends the other sessions of that account
+        $middleware->authenticateSessions();
+
         $middleware->web(append: [
+            SecurityHeaders::class,
+            ThrottleAuthEndpoints::class,
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
@@ -34,6 +50,8 @@ return Application::configure(basePath: dirname(__DIR__))
             EnsureUserIsActive::class,
             TouchLastSeen::class,
         ]);
+
+        $middleware->api(append: [SecurityHeaders::class]);
 
         $middleware->alias([
             'role' => EnsureUserHasRole::class,

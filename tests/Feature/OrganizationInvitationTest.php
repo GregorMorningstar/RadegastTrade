@@ -668,7 +668,7 @@ test('panel organizacji pokazuje dashboard ze statystykami i dane organizacji', 
             ->where('stats.shopHeadquarters', 2)
             ->where('stats.warehouseHeadquarters', 1)
             ->where('stats.people', 2)
-            ->has('people', 2));
+            ->has('people.data', 2));
 
     $this->get(route('platform.organization.index'))
         ->assertOk()

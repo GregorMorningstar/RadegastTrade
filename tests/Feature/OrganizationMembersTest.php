@@ -54,7 +54,7 @@ test('administrator i manager widzą podział organizacji na siedziby, placówki
     expect(array_keys($response->json('headquarters.data.0.branches.0.people.0')))->toContain('phone', 'barcode', 'role', 'id');
     // branch people do not repeat among the headquarters' own people
     expect(collect($response->json('headquarters.data.0.people'))->pluck('name')->all())->toBe(['Kierownik sklepu']);
-})->with([UserRole::Admin, UserRole::Manager, UserRole::Employee]);
+})->with([UserRole::Admin, UserRole::Manager]);
 
 test('hurtownie są osobną zakładką podziału', function () {
     $f = membersFixture();
@@ -108,7 +108,7 @@ test('wyszukiwanie znajduje siedzibę po jej danych, organizacji, placówce i os
     $f = membersFixture();
     $f['hq']->update(['city' => 'Jasło']);
     ShopHeadquarter::create(['organization_id' => $f['other']->id, 'name' => 'Trzecia siedziba']);
-    $this->actingAs(User::factory()->create(['role' => UserRole::Employee]));
+    $this->actingAs(User::factory()->create(['role' => UserRole::Manager]));
 
     $names = collect($this->getJson(route('platform.headquarters.tree', ['type' => 'shops', 'q' => $term]))->json('data'))->pluck('name')->sort()->values()->all();
 
@@ -172,7 +172,7 @@ test('drzewo wszystkich siedzib pokazuje organizację, siedziby, placówki i oso
         ->assertJsonPath('total', 1)
         ->assertJsonPath('data.0.organization', 'Org')
         ->assertJsonPath('data.0.people.0.name', 'Magazynier');
-})->with([UserRole::Admin, UserRole::Manager, UserRole::Employee]);
+})->with([UserRole::Admin, UserRole::Manager]);
 
 test('drzewo wszystkich siedzib jest zamknięte dla innych ról i gości, a rodzaj jest walidowany', function () {
     $f = membersFixture();

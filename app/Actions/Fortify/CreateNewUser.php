@@ -173,16 +173,19 @@ class CreateNewUser implements CreatesNewUsers
      */
     private function verifyKey(OrganizationInvitation $invitation, string $key): void
     {
-        if ($invitation->checkCode($key)) {
+        // counted under a lock, so parallel guesses cannot outrun the limit
+        $result = $invitation->attemptCode($key);
+
+        if ($result === 'ok') {
             return;
         }
 
-        $invitation->increment('attempts');
-
         throw ValidationException::withMessages([
-            'invitation_key' => $invitation->isLocked()
-                ? 'Zaproszenie zostało zablokowane po zbyt wielu błędnych próbach.'
-                : 'Nieprawidłowy klucz zaproszenia.',
+            'invitation_key' => match ($result) {
+                'locked' => 'Zaproszenie zostało zablokowane po zbyt wielu błędnych próbach.',
+                'unavailable' => 'Zaproszenie wygasło, zostało zablokowane lub już przyjęte.',
+                default => 'Nieprawidłowy klucz zaproszenia.',
+            },
         ]);
     }
 }

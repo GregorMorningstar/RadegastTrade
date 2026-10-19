@@ -2,9 +2,12 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\User;
 use App\Services\Contracts\ApiKeyServiceInterface;
 use App\Services\Contracts\ChatServiceInterface;
 use App\Services\Contracts\UnitMembershipServiceInterface;
+use App\Support\TradeAccess;
+use App\Support\UnitRef;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -27,6 +30,23 @@ class HandleInertiaRequests extends Middleware
     public function version(Request $request): ?string
     {
         return parent::version($request);
+    }
+
+    /**
+     * What the trade menu shows. Only a hint for the menu: every page and action checks the rights again on the server.
+     *
+     * @return array{allowed: bool, offers: bool, manage: bool}
+     */
+    private function tradeMenu(?User $user): array
+    {
+        $access = app(TradeAccess::class);
+        $managed = $user === null ? [] : $access->managedUnits($user);
+
+        return [
+            'allowed' => $user !== null && $access->canTrade($user),
+            'offers' => collect($managed)->contains(fn (UnitRef $unit) => $unit->isWarehouse()),
+            'manage' => $managed !== [],
+        ];
     }
 
     /**
@@ -53,6 +73,8 @@ class HandleInertiaRequests extends Middleware
             // the headquarters and branches of the person, for the "Jednostka" section of the menu
             'units' => fn () => $user ? app(UnitMembershipServiceInterface::class)->overview($user) : [],
             'canChat' => $user !== null && app(ChatServiceInterface::class)->canUse($user),
+            // the trade module: whether the person takes part, presents offers (manages a warehouse) and manages cooperation
+            'trade' => fn () => $this->tradeMenu($user),
             'rolePanel' => $user ? [
                 'base' => $user->role->basePath(),
                 'name' => $user->role->panelName(),

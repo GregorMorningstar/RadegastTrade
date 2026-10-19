@@ -9,7 +9,7 @@ use App\Models\User;
 interface OrganizationMembersServiceInterface
 {
     /**
-     * Breakdown of one organization into units for the platform staff (administrator, manager or employee);
+     * Breakdown of one organization into units for the platform staff (administrator or manager);
      * everyone else gets 403. The organization owners come first, then a page of headquarters of the
      * chosen type (5 per page), each with its managers and its branches with their people.
      * A search text narrows the headquarters to those matching it by their own data, their branches or their people.

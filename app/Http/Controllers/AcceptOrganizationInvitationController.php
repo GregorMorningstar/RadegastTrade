@@ -10,12 +10,16 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class AcceptOrganizationInvitationController extends Controller
 {
+    /** How many new keys one invitation may get in an hour. */
+    private const RESENDS_PER_HOUR = 3;
+
     /**
      * Invitation acceptance page: a field for the 6-digit key from the email.
      *
@@ -74,6 +78,18 @@ class AcceptOrganizationInvitationController extends Controller
             ]);
         }
 
+        // A new key also resets the counter of wrong attempts, and this route needs no login (the link is enough), so it is
+        // capped per invitation: otherwise it would be a way to keep guessing the 6 digits and to flood the mailbox
+        $limit = 'org-invitation-resend:'.$invitation->id;
+
+        if (RateLimiter::tooManyAttempts($limit, self::RESENDS_PER_HOUR)) {
+            throw ValidationException::withMessages([
+                'resend' => 'Wysłano już kilka nowych kluczy. Spróbuj za godzinę albo poproś o nowe zaproszenie.',
+            ]);
+        }
+
+        RateLimiter::hit($limit, 3600);
+
         $this->sendNewKey($invitation);
 
         return back()->with('status', 'resent');
@@ -122,14 +138,17 @@ class AcceptOrganizationInvitationController extends Controller
             ]);
         }
 
-        // A wrong key increments the attempt counter, and the invitation locks after the limit
-        if (! $invitation->checkCode($request->string('code')->toString())) {
-            $invitation->increment('attempts');
+        // A wrong key increments the attempt counter (under a lock, so parallel guesses cannot outrun it) and the
+        // invitation locks after the limit
+        $attempt = $invitation->attemptCode($request->string('code')->toString());
 
+        if ($attempt !== 'ok') {
             throw ValidationException::withMessages([
-                'code' => $invitation->isLocked()
-                    ? 'Zaproszenie zostało zablokowane po zbyt wielu błędnych próbach.'
-                    : 'Nieprawidłowy kod weryfikacyjny.',
+                'code' => match ($attempt) {
+                    'locked' => 'Zaproszenie zostało zablokowane po zbyt wielu błędnych próbach.',
+                    'unavailable' => 'Zaproszenie wygasło, zostało zablokowane lub już przyjęte.',
+                    default => 'Nieprawidłowy kod weryfikacyjny.',
+                },
             ]);
         }
 
