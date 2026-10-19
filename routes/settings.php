@@ -18,6 +18,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('settings/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('settings/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::post('settings/profile/avatar', [AvatarController::class, 'update'])->middleware('throttle:10,1,s1')->name('profile.avatar.update');
+    Route::post('settings/profile/avatar/confirm', [AvatarController::class, 'confirm'])->middleware('throttle:20,10,s7')->name('profile.avatar.confirm');
+    Route::delete('settings/profile/avatar/pending', [AvatarController::class, 'cancel'])->name('profile.avatar.cancel');
     Route::delete('settings/profile/avatar', [AvatarController::class, 'destroy'])->name('profile.avatar.destroy');
 });
 

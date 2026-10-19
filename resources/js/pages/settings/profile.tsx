@@ -4,7 +4,9 @@ import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileCo
 import DeleteUser from '@/components/delete-user';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import UserAvatar from '@/components/user-avatar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,16 +18,32 @@ type PageProps = {
     auth: Auth;
 };
 
-function AvatarSection() {
+function AvatarSection({ pending }: { pending: boolean }) {
     const { auth } = usePage<PageProps>().props;
     const form = useForm<{ avatar: File | null }>({ avatar: null });
+    const codeForm = useForm<{ code: string }>({ code: '' });
+    const [codeOpen, setCodeOpen] = useState(false);
     const preview = form.data.avatar ? URL.createObjectURL(form.data.avatar) : null;
+
+    const confirm = () => {
+        codeForm.post('/settings/profile/avatar/confirm', {
+            preserveScroll: true,
+            onSuccess: () => {
+                codeForm.reset();
+                setCodeOpen(false);
+            },
+        });
+    };
 
     const upload = () => {
         form.post('/settings/profile/avatar', {
             forceFormData: true,
             preserveScroll: true,
-            onSuccess: () => form.reset(),
+            onSuccess: () => {
+                form.reset();
+                codeForm.reset();
+                setCodeOpen(true);
+            },
         });
     };
 
@@ -50,9 +68,63 @@ function AvatarSection() {
                     <p className="text-xs text-muted-foreground">JPG, PNG lub WEBP, do 2 MB, od 64 do 4000 px.</p>
                     <InputError message={form.errors.avatar} />
 
+                    {pending && (
+                        <p className="text-sm">
+                            Nowe zdjęcie czeka na potwierdzenie.{' '}
+                            <button type="button" onClick={() => setCodeOpen(true)} className="text-primary underline">
+                                Wpisz kod z e-maila
+                            </button>
+                        </p>
+                    )}
+
+                    <Dialog open={pending && codeOpen} onOpenChange={setCodeOpen}>
+                        <DialogContent className="sm:max-w-sm">
+                            <DialogHeader>
+                                <DialogTitle>Potwierdź zmianę zdjęcia</DialogTitle>
+                                <DialogDescription>
+                                    Wysłaliśmy 6-cyfrowy kod na Twój e-mail. Jest ważny 15 minut.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <form
+                                onSubmit={(e) => {
+                                    e.preventDefault();
+                                    confirm();
+                                }}
+                                className="space-y-3"
+                            >
+                                <Input
+                                    value={codeForm.data.code}
+                                    onChange={(e) => codeForm.setData('code', e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                    inputMode="numeric"
+                                    autoComplete="one-time-code"
+                                    placeholder="000000"
+                                    autoFocus
+                                />
+                                <InputError message={codeForm.errors.code} />
+                                <div className="flex justify-end gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() =>
+                                            router.delete('/settings/profile/avatar/pending', {
+                                                preserveScroll: true,
+                                                onSuccess: () => codeForm.reset(),
+                                            })
+                                        }
+                                    >
+                                        Anuluj zmianę
+                                    </Button>
+                                    <Button type="submit" disabled={codeForm.data.code.length !== 6 || codeForm.processing}>
+                                        Potwierdź
+                                    </Button>
+                                </div>
+                            </form>
+                        </DialogContent>
+                    </Dialog>
+
                     <div className="flex gap-2">
                         <Button type="button" onClick={upload} disabled={!form.data.avatar || form.processing}>
-                            Zapisz zdjęcie
+                            {pending ? 'Wyślij nowy kod' : 'Zapisz zdjęcie'}
                         </Button>
                         {auth.user.avatar_path && (
                             <Button
@@ -73,9 +145,11 @@ function AvatarSection() {
 export default function Profile({
     mustVerifyEmail,
     status,
+    avatarPending,
 }: {
     mustVerifyEmail: boolean;
     status?: string;
+    avatarPending: boolean;
 }) {
     const { auth } = usePage<PageProps>().props;
 
@@ -86,7 +160,7 @@ export default function Profile({
             <h1 className="sr-only">Profile settings</h1>
 
             <div className="space-y-6">
-                <AvatarSection />
+                <AvatarSection pending={avatarPending} />
 
                 <Heading
                     variant="small"

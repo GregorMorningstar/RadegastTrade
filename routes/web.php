@@ -79,6 +79,10 @@ Route::prefix('platform')
         Route::prefix('organization')->name('organization.')->middleware('role:organization_owner')->group(function () {
             Route::get('/', [Platform\OrganizationOwnerController::class, 'index'])->name('index');
             Route::get('dashboard', [Platform\OrganizationOwnerController::class, 'dashboard'])->name('dashboard');
+            Route::get('people/{user}', [Platform\OrganizationOwnerController::class, 'person'])
+                ->whereNumber('user')
+                ->middleware('throttle:60,1,w48')
+                ->name('people.show');
             Route::get('tasks', [TaskController::class, 'index'])->name('tasks.index');
             Route::get('products', [ProductController::class, 'index'])->middleware('throttle:120,1,w4')->name('products.index');
             Route::get('nip-lookup', [Platform\OrganizationOwnerController::class, 'nipLookup'])

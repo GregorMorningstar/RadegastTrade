@@ -1,13 +1,16 @@
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import { Building2, Store, Users, Warehouse } from 'lucide-react';
+import { useState } from 'react';
 import Barcode from 'react-barcode';
+import PersonDetailsModal from '@/components/person-details-modal';
+import UserAvatar from '@/components/user-avatar';
+import { chatWindow } from '@/lib/chat-window';
 import {
     Card,
     Content,
     ContentHeader,
     SmallBox,
 } from '@/components/adminlte/blocks';
-import UserBarcodeCard from '@/components/user-barcode-card';
 
 type Props = {
     organization: {
@@ -22,12 +25,22 @@ type Props = {
         people: number;
     };
     people: {
-        id: number;
-        name: string;
-        email: string;
-        role: string;
-        last_login: string | null;
-    }[];
+        data: {
+            id: number;
+            name: string;
+            email: string;
+            role: string;
+            is_me: boolean;
+            avatar_url: string;
+            last_login: string | null;
+        }[];
+        current_page: number;
+        last_page: number;
+        from: number | null;
+        to: number | null;
+        total: number;
+        links: { url: string | null; label: string; active: boolean }[];
+    };
 };
 
 export default function OrganizationOwnerDashboard({
@@ -35,8 +48,11 @@ export default function OrganizationOwnerDashboard({
     stats,
     people,
 }: Props) {
+    const [detailsId, setDetailsId] = useState<number | null>(null);
+
     return (
         <>
+            <PersonDetailsModal personId={detailsId} onClose={() => setDetailsId(null)} />
             <Head title="Dashboard - Właściciel organizacji" />
             <ContentHeader
                 title="Dashboard"
@@ -110,31 +126,94 @@ export default function OrganizationOwnerDashboard({
                                         <th className="py-2 pr-4 font-semibold">Nazwa</th>
                                         <th className="py-2 pr-4 font-semibold">E-mail</th>
                                         <th className="py-2 pr-4 font-semibold">Rola</th>
-                                        <th className="py-2 font-semibold">Ostatnie logowanie</th>
+                                        <th className="py-2 pr-4 font-semibold">Ostatnie logowanie</th>
+                                        <th className="py-2 text-right font-semibold">Akcje</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {people.map((person) => (
+                                    {people.data.map((person) => (
                                         <tr
                                             key={person.id}
                                             className="border-b border-[#dee2e6] last:border-0"
                                         >
-                                            <td className="py-2 pr-4">{person.name}</td>
+                                            <td className="py-2 pr-4">
+                                                <span className="flex items-center gap-2">
+                                                    <UserAvatar src={person.avatar_url} name={person.name} size={28} />
+                                                    {person.name}
+                                                </span>
+                                            </td>
                                             <td className="py-2 pr-4">{person.email}</td>
                                             <td className="py-2 pr-4">
                                                 <span className="rounded bg-[#007bff] px-2 py-0.5 text-xs text-white">
                                                     {person.role}
                                                 </span>
                                             </td>
-                                            <td className="py-2">{person.last_login ?? '—'}</td>
+                                            <td className="py-2 pr-4">{person.last_login ?? '—'}</td>
+                                            <td className="py-2 text-right whitespace-nowrap">
+                                                {!person.is_me && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => chatWindow.openWith(person.id)}
+                                                        className="mr-1 rounded bg-[#0084ff] px-2 py-1 text-xs text-white hover:bg-[#0073e6]"
+                                                    >
+                                                        Czat
+                                                    </button>
+                                                )}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setDetailsId(person.id)}
+                                                    className="rounded border border-[#007bff] px-2 py-1 text-xs text-[#007bff] hover:bg-[#007bff] hover:text-white"
+                                                >
+                                                    Szczegóły
+                                                </button>
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
                         </div>
+
+                        {people.last_page > 1 && (
+                            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+                                <span className="text-[#6c757d]">
+                                    {people.from}–{people.to} z {people.total}
+                                </span>
+                                <nav className="flex flex-wrap gap-1">
+                                    {people.links.map((link, i) => {
+                                        const label = link.label
+                                            .replace('&laquo;', '«')
+                                            .replace('&raquo;', '»')
+                                            .replace('Previous', 'Poprzednia')
+                                            .replace('Next', 'Następna');
+                                        const cls = `rounded border px-2.5 py-1 ${
+                                            link.active
+                                                ? 'border-[#007bff] bg-[#007bff] text-white'
+                                                : 'border-[#dee2e6] text-[#007bff]'
+                                        }`;
+
+                                        return link.url ? (
+                                            <Link
+                                                key={i}
+                                                href={link.url}
+                                                preserveScroll
+                                                className={cls}
+                                            >
+                                                {label}
+                                            </Link>
+                                        ) : (
+                                            <span
+                                                key={i}
+                                                className={`${cls} opacity-50`}
+                                            >
+                                                {label}
+                                            </span>
+                                        );
+                                    })}
+                                </nav>
+                            </div>
+                        )}
                     </Card>
                 </div>
-                <UserBarcodeCard className="mt-4 max-w-md" />
             </Content>
         </>
     );

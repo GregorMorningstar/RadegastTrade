@@ -50,18 +50,56 @@ class OrganizationOwnerController extends Controller
             ],
             'people' => $organization->users()
                 ->orderBy('name')
-                ->get(['id', 'name', 'email', 'role', 'last_login_at', 'last_login_timezone'])
-                ->map(fn (User $user) => [
+                ->paginate(10, ['id', 'name', 'email', 'role', 'avatar_path', 'last_login_at', 'last_login_timezone'])
+                ->withQueryString()
+                ->through(fn (User $user) => [
                     'id' => $user->id,
                     'name' => $user->name,
                     'email' => $user->email,
                     'role' => $user->role->label(),
+                    'is_me' => $user->id === $request->user()->id,
+                    'avatar_url' => $user->avatar_url,
                     'last_login' => $user->last_login_local
                         ? $user->last_login_local->format('d.m.Y H:i').' ('.$user->last_login_local->getTimezone()->getName().')'
                         : null,
-                ])
-                ->values(),
+                ]),
         ]);
+    }
+
+    /**
+     * Details of one person of the owner's organization (JSON for the small details window).
+     * Only an explicit whitelist of fields is returned; a person from another organization is a 404 (no enumeration).
+     */
+    public function person(Request $request, int $user): JsonResponse
+    {
+        $person = $request->user()->organization?->users()
+            ->with(['warehouseHeadquarter:id,name', 'shopHeadquarter:id,name', 'warehouseBranch:id,name', 'shopBranch:id,name'])
+            ->find($user);
+
+        abort_if($person === null, 404);
+
+        $units = collect([
+            $person->warehouseHeadquarter?->name,
+            $person->shopHeadquarter?->name,
+            $person->warehouseBranch?->name,
+            $person->shopBranch?->name,
+        ])->filter()->values();
+
+        return response()->json([
+            'id' => $person->id,
+            'name' => $person->name,
+            'email' => $person->email,
+            'phone' => $person->phone,
+            'role' => $person->role->label(),
+            'units' => $units,
+            'avatar_url' => $person->avatar_url,
+            'is_active' => (bool) $person->is_active,
+            'is_me' => $person->id === $request->user()->id,
+            'last_login' => $person->last_login_local
+                ? $person->last_login_local->format('d.m.Y H:i').' ('.$person->last_login_local->getTimezone()->getName().')'
+                : null,
+            'created_at' => $person->created_at?->format('d.m.Y'),
+        ])->header('Cache-Control', 'no-store, private');
     }
 
     /**

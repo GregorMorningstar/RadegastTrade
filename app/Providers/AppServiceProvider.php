@@ -60,6 +60,7 @@ use App\Services\StructureListingService;
 use App\Services\TeamMembersService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Foundation\DevCommands;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -127,6 +128,9 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->recordLastLogin();
+
+        // overrides the vendor's "reverb" entry of `composer run dev` (same name, userland wins) to add --debug
+        DevCommands::artisan('reverb:start --debug', 'reverb');
     }
 
     /**
