@@ -19,6 +19,9 @@ return new class extends Migration
             $table->id();
             $table->string('number', 32)->unique();
 
+            // Unique EAN-13 barcode of the order (assigned by the model after creation, see config/barcode.php)
+            $table->string('barcode', 13)->nullable()->unique();
+
             $table->foreignId('buyer_organization_id')->constrained('organizations')->restrictOnDelete();
             $table->string('buyer_unit_type', 12);
             $table->string('buyer_unit_level', 12);

@@ -20,9 +20,13 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->timestamp('completed_at')->useCurrent();
 
+            // Which occurrence was done: "once" for an ordinary task, the date (Y-m-d) of the day for a standing task, where
+            // every person marks every day separately. (A key, not a nullable date: a unique index over NULL is not unique.)
+            $table->string('occurrence_key', 10)->default('once');
+
             $table->timestamps();
 
-            $table->unique(['task_id', 'user_id']);
+            $table->unique(['task_id', 'user_id', 'occurrence_key']);
         });
     }
 

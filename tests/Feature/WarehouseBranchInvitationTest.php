@@ -125,6 +125,6 @@ test('dashboard kierownika placówki pokazuje kody kreskowe placówki i siedziby
         ->assertInertia(fn ($page) => $page
             ->component('platform/warehouses/leader/dashboard/index')
             ->where('branch.name', 'Magazyn 1')
-            ->where('branch.barcode', fn ($code) => preg_match('/^2007\\d{9}$/', $code) === 1)
-            ->where('branch.headquarter.barcode', fn ($code) => preg_match('/^2003\\d{9}$/', $code) === 1));
+            ->where('branch.barcode', fn ($code) => preg_match('/^2202\\d{9}$/', $code) === 1)
+            ->where('branch.headquarter.barcode', fn ($code) => preg_match('/^2201\\d{9}$/', $code) === 1));
 });

@@ -27,6 +27,9 @@ class OfferController extends Controller
 
     public function index(Request $request): Response
     {
+        // a shop does not present offers: it has no list of its own (it only orders from the available ones)
+        Gate::forUser($request->user())->authorize('viewOwn', Offer::class);
+
         $status = $request->query('status');
 
         return Inertia::render('trade/offers/index', [

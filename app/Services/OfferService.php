@@ -13,6 +13,7 @@ use App\Models\Organization;
 use App\Models\TradeRelationshipUnit;
 use App\Models\User;
 use App\Notifications\OfferSharedNotification;
+use App\Services\Contracts\ChatServiceInterface;
 use App\Support\OfferVisibility;
 use App\Support\TradeAccess;
 use App\Support\UnitRef;
@@ -41,6 +42,7 @@ class OfferService
         private readonly OfferVisibility $visibility,
         private readonly OrderService $orders,
         private readonly AuditLogger $audit,
+        private readonly ChatServiceInterface $chat,
     ) {
         //
     }
@@ -114,6 +116,7 @@ class OfferService
         return DB::transaction(function () use ($user, $offer, $sharedInternally) {
             $offer = Offer::query()->whereKey($offer->id)->lockForUpdate()->firstOrFail();
             $draft = $offer->versions()->where('status', OfferVersionStatus::Draft->value)->first();
+            $firstPublication = $offer->current_version_id === null;
 
             if ($draft === null) {
                 throw ValidationException::withMessages(['offer' => 'Nie ma wersji roboczej do opublikowania.']);
@@ -139,10 +142,16 @@ class OfferService
                 'published_at' => $offer->published_at ?? now(),
                 'withdrawn_at' => null,
                 'withdrawn_by' => null,
-                'shared_internally' => $sharedInternally ?? $offer->shared_internally,
+                // units of one organization cooperate without an invitation, so an offer is open to them unless the seller says otherwise
+                'shared_internally' => $sharedInternally ?? ($offer->current_version_id === null ? true : $offer->shared_internally),
             ]);
 
             $this->audit->record($user, $user->organization_id, 'offer.published', $offer, ['version' => $draft->version_no, 'internal' => $offer->shared_internally]);
+
+            // the first publication of an offer open inside the organization: the people who manage the other units are told in the chat
+            if ($firstPublication && $offer->shared_internally) {
+                DB::afterCommit(fn () => $this->announceInternally($user, $offer->refresh(), $draft->title));
+            }
 
             return $offer->refresh();
         });
@@ -247,9 +256,31 @@ class OfferService
 
             foreach ($this->access->managersOf($unit, $organizationId) as $manager) {
                 $manager->notify(new OfferSharedNotification($offer->number, (string) $version?->title, $supplier, $unitName));
+                $this->chat->trySend($user, $manager, 'Udostępniono Ci ofertę '.$offer->number.' „'.(string) $version?->title.'” (dla: '.$unitName.'). Zobacz: Handel → Oferty dostępne.');
             }
 
             $share->update(['notified_at' => now()]);
+        }
+    }
+
+    /** A chat message to the people who manage the other units of the organization: a new offer is open to them. */
+    private function announceInternally(User $seller, Offer $offer, string $title): void
+    {
+        $organizationId = (int) $offer->organization_id;
+        $own = $offer->unit();
+        $told = [$seller->id => true];
+
+        foreach ($this->access->allUnits($organizationId) as $unit) {
+            if ($own !== null && $unit->equals($own)) {
+                continue;
+            }
+
+            foreach ($this->access->managersOf($unit, $organizationId) as $manager) {
+                if (! isset($told[$manager->id])) {
+                    $told[$manager->id] = true;
+                    $this->chat->trySend($seller, $manager, 'Nowa oferta '.$offer->number.' „'.$title.'” (hurtownia: '.$own?->find($organizationId)?->name.') jest dostępna dla Twojej organizacji. Zobacz: Handel → Oferty dostępne.');
+                }
+            }
         }
     }
 
@@ -446,6 +477,7 @@ class OfferService
         return [
             'id' => $offer->id,
             'number' => $offer->number,
+            'barcode' => $offer->barcode,
             'title' => $version?->title,
             'status' => $offer->displayStatus(),
             'shared_internally' => $offer->shared_internally,

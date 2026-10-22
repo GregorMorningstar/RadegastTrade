@@ -21,6 +21,9 @@ return new class extends Migration
             $table->foreignId('organization_id')->constrained()->restrictOnDelete();
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
 
+            // Unique EAN-13 barcode of the task (assigned by the model after creation, see config/barcode.php)
+            $table->string('barcode', 13)->nullable()->unique();
+
             $table->string('title');
             $table->text('description')->nullable();
 
@@ -35,6 +38,20 @@ return new class extends Migration
             $table->boolean('all_day')->default(false);
             $table->dateTime('starts_at');
             $table->dateTime('ends_at');
+
+            // Whether the person who carries the task out has to confirm that they did it with a code from their e-mail
+            // (a code is e-mailed to them when they mark it as done)
+            $table->boolean('requires_completion_code')->default(false);
+
+            // A standing (recurring) task: it repeats on the chosen weekdays (ISO: 1 = Monday ... 7 = Sunday) from one date to
+            // another, e.g. every working day of a month, optionally within a daily time window (empty = the whole day).
+            // starts_at / ends_at then hold the first and the last moment of the series, so the period filters, the Gantt chart
+            // and the dependencies work as for any task. Empty recurrence_from = an ordinary task.
+            $table->date('recurrence_from')->nullable();
+            $table->date('recurrence_to')->nullable();
+            $table->json('recurrence_days')->nullable();
+            $table->time('daily_start_time')->nullable();
+            $table->time('daily_end_time')->nullable();
 
             // The task that has to be finished first (the arrow on the Gantt chart)
             $table->foreignId('depends_on_id')->nullable()->constrained('tasks')->nullOnDelete();

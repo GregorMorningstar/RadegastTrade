@@ -3,7 +3,7 @@ import { Card, Content, ContentHeader } from '@/components/adminlte/blocks';
 import { Badge, btn, btnDanger, date, Empty, Errors } from '@/components/trade/ui';
 
 type Props = {
-    token: string;
+    base: string;
     invitation: {
         status: string;
         status_label: string;
@@ -23,7 +23,7 @@ type Props = {
  * Invitation to trade cooperation. Opening the link changes nothing: only a signed-in person who represents the invited
  * organization sees the choice of units and can accept or reject.
  */
-export default function InvitationShow({ token, invitation }: Props) {
+export default function InvitationShow({ base, invitation }: Props) {
     const form = useForm({ units: [] as string[], all_current: false });
     const pending = invitation.status === 'pending';
 
@@ -77,10 +77,10 @@ export default function InvitationShow({ token, invitation }: Props) {
                             )}
                         </div>
                         <div className="mt-4 flex gap-2">
-                            <button className={btn} disabled={form.processing || (!form.data.all_current && form.data.units.length === 0)} onClick={() => form.post(`/trade/invitations/${token}/accept`)}>
+                            <button className={btn} disabled={form.processing || (!form.data.all_current && form.data.units.length === 0)} onClick={() => form.post(`${base}/accept`)}>
                                 Przyjmij zaproszenie
                             </button>
-                            <button className={btnDanger} onClick={() => confirm('Odrzucić zaproszenie?') && router.post(`/trade/invitations/${token}/reject`)}>
+                            <button className={btnDanger} onClick={() => confirm('Odrzucić zaproszenie?') && router.post(`${base}/reject`)}>
                                 Odrzuć
                             </button>
                         </div>

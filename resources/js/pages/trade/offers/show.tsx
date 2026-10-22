@@ -1,4 +1,5 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
+import Barcode from 'react-barcode';
 import { useState } from 'react';
 import { Card, Content, ContentHeader } from '@/components/adminlte/blocks';
 import { Badge, btn, btnDanger, btnOutline, date, Empty, Errors, money, td, th, TradeTabs } from '@/components/trade/ui';
@@ -31,6 +32,7 @@ type Version = {
 type Offer = {
     id: number;
     number: string;
+    barcode: string | null;
     title: string | null;
     status: string;
     unit: string;
@@ -131,7 +133,7 @@ function Attachments({ offer, version, editable }: { offer: Offer; version: Vers
 }
 
 function SellerPanel({ offer }: { offer: Offer }) {
-    const [internal, setInternal] = useState(offer.shared_internally);
+    const [internal, setInternal] = useState(offer.status === 'draft' ? true : offer.shared_internally);
     const [units, setUnits] = useState<string[]>([]);
     const [allowOrder, setAllowOrder] = useState(true);
     const activeShares = (offer.shares ?? []).filter((share) => share.revoked_at === null);
@@ -175,7 +177,7 @@ function SellerPanel({ offer }: { offer: Offer }) {
                             }
                         }}
                     />
-                    Pokaż ofertę jednostkom mojej organizacji (po publikacji). Daje wgląd tylko w samą ofertę.
+                    Udostępnij ofertę jednostkom mojej organizacji (po publikacji, automatycznie, bez zaproszenia): mogą ją zobaczyć i w niej zamawiać.
                 </label>
             </Card>
 
@@ -277,6 +279,12 @@ export default function OfferShow({ offer }: { offer: Offer }) {
                         <p className="text-sm">
                             <Badge status={offer.status} /> {offer.supplier} – {offer.unit}
                         </p>
+                        {offer.barcode && (
+                            <div className="mt-3">
+                                <p className="mb-1 text-xs text-[#6c757d]">Kod kreskowy oferty</p>
+                                <Barcode value={offer.barcode} format="EAN13" width={1.6} height={40} fontSize={11} margin={0} background="transparent" />
+                            </div>
+                        )}
                     </Card>
 
                     {offer.is_seller && <SellerPanel offer={offer} />}

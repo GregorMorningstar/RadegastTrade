@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\HeadquarterType;
+use App\Enums\UnitLevel;
 use App\Enums\TradeInvitationStatus;
 use App\Enums\TradeRelationshipStatus;
 use App\Enums\TradeSide;
@@ -12,8 +13,10 @@ use App\Models\TradeRelationship;
 use App\Models\TradeRelationshipUnit;
 use App\Models\User;
 use App\Notifications\TradeInvitationNotification;
+use App\Services\Contracts\ChatServiceInterface;
 use App\Support\TradeAccess;
 use App\Support\UnitRef;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
@@ -30,7 +33,7 @@ class TradeRelationshipService
 {
     public const INVITATION_DAYS = 14;
 
-    public function __construct(private readonly TradeAccess $access, private readonly AuditLogger $audit)
+    public function __construct(private readonly TradeAccess $access, private readonly AuditLogger $audit, private readonly ChatServiceInterface $chat)
     {
         //
     }
@@ -55,20 +58,20 @@ class TradeRelationshipService
 
         $units = $this->ownScope($inviter, $role, $data['units'] ?? [], (bool) ($data['all_current'] ?? false));
 
-        $invitee = User::query()
-            ->whereNotNull('organization_id')
-            ->where('is_active', true)
-            ->where('email', mb_strtolower(trim((string) $data['invitee_email'])))
-            ->first();
+        $recipients = $this->recipients($inviter, $role, $data);
+        $invitee = $recipients->first();
 
         if ($invitee === null || $invitee->organization_id === $inviter->organization_id) {
             return null;
         }
 
+        $unitRef = ($data['target_unit'] ?? null) ?: null;
+
         $exists = TradeInvitation::query()
             ->where('inviter_organization_id', $inviter->organization_id)
             ->where('invitee_organization_id', $invitee->organization_id)
             ->where('inviter_role', $role->value)
+            ->where('invitee_unit_ref', $unitRef)
             ->where('status', TradeInvitationStatus::Pending->value)
             ->where('expires_at', '>', now())
             ->exists();
@@ -79,12 +82,13 @@ class TradeRelationshipService
 
         $token = Str::random(64);
 
-        $invitation = DB::transaction(function () use ($inviter, $invitee, $role, $units, $data, $token) {
+        $invitation = DB::transaction(function () use ($inviter, $invitee, $role, $units, $data, $token, $unitRef) {
             $invitation = TradeInvitation::create([
                 'inviter_organization_id' => $inviter->organization_id,
                 'inviter_role' => $role->value,
                 'invitee_organization_id' => $invitee->organization_id,
                 'invitee_email' => $invitee->email,
+                'invitee_unit_ref' => $unitRef,
                 'invitee_scope' => 'open',
                 'message' => isset($data['message']) ? Str::limit(trim((string) $data['message']), 500, '') : null,
                 'token_hash' => TradeInvitation::hashToken($token),
@@ -106,15 +110,142 @@ class TradeRelationshipService
             return $invitation;
         });
 
-        $invitee->notify(new TradeInvitationNotification(
-            $token,
-            (string) $inviter->organization?->name,
-            $role === TradeSide::Supplier ? 'przedstawianie Ci ofert' : 'zamawianie w Twoich hurtowniach i sklepach',
-            (string) $invitation->message,
-            $invitation->expires_at->format('d.m.Y H:i'),
-        ));
+        foreach ($recipients as $recipient) {
+            $recipient->notify(new TradeInvitationNotification(
+                $token,
+                (string) $inviter->organization?->name,
+                $role === TradeSide::Supplier ? 'przedstawianie Ci ofert' : 'zamawianie w Twoich hurtowniach i sklepach',
+                (string) $invitation->message,
+                $invitation->expires_at->format('d.m.Y H:i'),
+            ));
+        }
 
         return $invitation;
+    }
+
+    /**
+     * Invites several units at once: each chosen unit gets its own invitation (and its own e-mail to the people who
+     * manage it). A unit that already has an invitation waiting is skipped; nothing tells whether the others exist.
+     *
+     * @param  array<string, mixed>  $data  as for invite(), with "target_units" (a list of unit references)
+     */
+    public function inviteMany(User $inviter, array $data): void
+    {
+        foreach (array_unique($data['target_units'] ?? []) as $ref) {
+            try {
+                $this->invite($inviter, [...$data, 'target_unit' => $ref]);
+            } catch (ValidationException $e) {
+                // only an invitation that is already waiting is skipped; a wrong scope or role is reported
+                if (! isset($e->errors()['invitee_email'])) {
+                    throw $e;
+                }
+            }
+        }
+    }
+
+    /**
+     * Who gets the invitation: the people who manage the chosen unit of another organization (the owners when the unit has
+     * nobody), or the person with the given e-mail address. Empty when there is nobody to invite, which the caller
+     * answers the same way as a success.
+     *
+     * @param  array<string, mixed>  $data
+     * @return Collection<int, User>
+     */
+    private function recipients(User $inviter, TradeSide $role, array $data): Collection
+    {
+        $ref = $data['target_unit'] ?? null;
+
+        if ($ref !== null && $ref !== '') {
+            $unit = UnitRef::parse($ref);
+            $model = $unit?->modelClass()::query()->where('organization_id', '!=', $inviter->organization_id)->find($unit->id);
+
+            // the other side has to be able to take the opposite role: a shop only buys, so it cannot be invited to sell
+            if ($unit === null || $model === null || ($role === TradeSide::Buyer && ! $unit->isWarehouse())) {
+                return collect();
+            }
+
+            return $this->access->managersOf($unit, (int) $model->organization_id);
+        }
+
+        $invitee = User::query()
+            ->whereNotNull('organization_id')
+            ->where('is_active', true)
+            ->where('email', mb_strtolower(trim((string) ($data['invitee_email'] ?? ''))))
+            ->first();
+
+        return $invitee === null ? collect() : collect([$invitee]);
+    }
+
+    /**
+     * The invitations waiting for an answer from this person: to cooperate (addressed to their organization; one meant for
+     * a unit only to the people who manage it and the owner) and to units of their own organization, plus the consents
+     * they are asked for. Shown in the chat and on the dashboard; each entry says where to answer.
+     *
+     * @return list<array{kind: string, title: string, text: string, href: string, expires_at: string|null}>
+     */
+    public function inbox(User $user): array
+    {
+        if ($user->organization_id === null || ! $this->access->canTrade($user)) {
+            return [];
+        }
+
+        $items = [];
+        $managed = $this->access->managedUnits($user);
+
+        if ($managed !== []) {
+            $invitations = TradeInvitation::query()
+                ->where('invitee_organization_id', $user->organization_id)
+                ->where('status', TradeInvitationStatus::Pending->value)->where('expires_at', '>', now())
+                ->with('inviterOrganization:id,name')->orderByDesc('id')->limit(20)->get();
+
+            foreach ($invitations as $invitation) {
+                $unit = $invitation->invitee_unit_ref === null ? null : UnitRef::parse($invitation->invitee_unit_ref);
+
+                if ($unit !== null && ! $this->access->isOwner($user) && ! $this->access->manages($user, $unit)) {
+                    continue;
+                }
+
+                // the cooperation is already there (same organizations, same direction): nothing to answer
+                if ($this->coveredByCooperation($invitation)) {
+                    continue;
+                }
+
+                $items[] = [
+                    'kind' => 'trade',
+                    'title' => 'Zaproszenie do współpracy: '.$invitation->inviterOrganization?->name,
+                    'text' => ($invitation->inviter_role === TradeSide::Supplier ? 'Organizacja przedstawia Ci oferty' : 'Organizacja chce zamawiać w Twoich jednostkach').($unit?->find((int) $user->organization_id) ? ' (dla: '.$unit->find((int) $user->organization_id)->name.')' : '').'.',
+                    'href' => '/trade/invitations/id/'.$invitation->id,
+                    'expires_at' => $invitation->expires_at->toIso8601String(),
+                ];
+            }
+
+            // units that joined a cooperation because the owner or the manager of the headquarters accepted for them
+            $joined = TradeRelationshipUnit::query()
+                ->where('organization_id', $user->organization_id)->whereNull('revoked_at')
+                ->whereNotNull('auto_added_by')->where('auto_added_by', '!=', $user->id)->whereNull('alert_dismissed_at')
+                ->with(['relationship.supplier:id,name', 'relationship.buyer:id,name', 'autoAddedBy:id,name'])->orderByDesc('id')->limit(20)->get();
+
+            foreach ($joined as $row) {
+                $unit = $row->unit();
+
+                if ($unit === null || ! $this->access->manages($user, $unit)) {
+                    continue;
+                }
+
+                $partner = $row->side === TradeSide::Supplier ? $row->relationship?->buyer : $row->relationship?->supplier;
+
+                $items[] = [
+                    'kind' => 'alert',
+                    'title' => 'Jednostka dodana do współpracy: '.$partner?->name,
+                    'text' => '„'.$unit->find((int) $user->organization_id)?->name.'” dołączyła automatycznie po zaakceptowaniu zaproszenia przez '.$row->autoAddedBy?->name.'.',
+                    'href' => '/trade/partners',
+                    'expires_at' => null,
+                    'dismiss' => '/trade/partners/alerts/'.$row->id.'/dismiss',
+                ];
+            }
+        }
+
+        return $items;
     }
 
     public function findByToken(string $token): ?TradeInvitation
@@ -128,9 +259,11 @@ class TradeRelationshipService
      *
      * @param  array{units?: array<int, string>, all_current?: bool}  $data
      */
-    public function accept(User $user, string $token, array $data): TradeRelationship
+    public function accept(User $user, string|int $token, array $data): TradeRelationship
     {
-        return DB::transaction(function () use ($user, $token, $data) {
+        $joined = [];
+
+        $relationship = DB::transaction(function () use ($user, $token, $data, &$joined) {
             $invitation = $this->lockPending($token);
 
             Gate::forUser($user)->authorize('represent', $invitation);
@@ -188,11 +321,103 @@ class TradeRelationshipService
                 'units' => array_map(fn (UnitRef $unit) => $unit->ref(), $units),
             ]);
 
+            $joined = $this->acceptSubordinates($user, $invitation, $relationship, $side);
+
             return $relationship;
         });
+
+        $this->announceJoined($user, $relationship, $joined);
+
+        return $relationship;
     }
 
-    public function reject(User $user, string $token): void
+    /**
+     * The owner or the manager of a headquarters accepts: the units below them that were invited separately (the same
+     * organization, the same direction, still waiting) join at once, so each of those invitations is accepted for them.
+     * An invitation whose sender has lost the right to it is left alone. Returns the units that joined.
+     *
+     * @return list<UnitRef>
+     */
+    private function acceptSubordinates(User $user, TradeInvitation $accepted, TradeRelationship $relationship, TradeSide $side): array
+    {
+        if (! $this->access->isOwner($user) && HeadquarterType::forRole($user->role) === null) {
+            return [];
+        }
+
+        $joined = [];
+
+        $others = TradeInvitation::query()
+            ->where('inviter_organization_id', $accepted->inviter_organization_id)
+            ->where('invitee_organization_id', $accepted->invitee_organization_id)
+            ->where('inviter_role', $accepted->inviter_role->value)
+            ->where('status', TradeInvitationStatus::Pending->value)->where('expires_at', '>', now())
+            ->whereNotNull('invitee_unit_ref')->whereKeyNot($accepted->id)
+            ->lockForUpdate()->get();
+
+        foreach ($others as $other) {
+            $unit = UnitRef::parse($other->invitee_unit_ref);
+
+            if ($unit === null || $unit->find((int) $user->organization_id) === null || ! $this->access->manages($user, $unit)) {
+                continue;
+            }
+
+            try {
+                $this->assertInviterStillEntitled($other);
+            } catch (ValidationException) {
+                continue;
+            }
+
+            $inviterUnits = $other->units()->where('side', 'inviter')->pluck('unit_ref')->map(fn (string $ref) => UnitRef::parse($ref))->filter()->all();
+
+            $this->addUnits($relationship, $other->inviter_role, $other->inviter_organization_id, $inviterUnits, $other->invited_by);
+            $this->addUnits($relationship, $side, (int) $user->organization_id, [$unit], $user->id, autoAddedBy: $user->id);
+
+            $other->update(['status' => TradeInvitationStatus::Accepted->value, 'responded_by' => $user->id, 'responded_at' => now(), 'relationship_id' => $relationship->id]);
+            $this->audit->record($user, $user->organization_id, 'trade.invitation.accepted_for_subordinate', $other, ['relationship_id' => $relationship->id, 'unit' => $unit->ref()]);
+
+            $joined[] = $unit;
+        }
+
+        return $joined;
+    }
+
+    /**
+     * Tells the people who manage the units that joined: a message in the chat from the person who accepted (the alert
+     * is shown by the inbox, see inbox()).
+     *
+     * @param  list<UnitRef>  $units
+     */
+    private function announceJoined(User $acceptor, TradeRelationship $relationship, array $units): void
+    {
+        $organizationId = (int) $acceptor->organization_id;
+        $partner = $relationship->sideOf($organizationId) === TradeSide::Supplier ? $relationship->buyer : $relationship->supplier;
+
+        foreach ($units as $unit) {
+            $name = (string) $unit->find($organizationId)?->name;
+
+            foreach ($this->access->managersOf($unit, $organizationId)->reject(fn (User $person) => $person->id === $acceptor->id) as $manager) {
+                try {
+                    $this->chat->send($acceptor, $manager, 'Przyjąłem(-am) zaproszenie do współpracy z organizacją „'.$partner?->name.'”. Twoja jednostka „'.$name.'” została dodana do tej współpracy automatycznie.');
+                } catch (\Throwable $e) {
+                    // a message that cannot be sent (chat unavailable) must not undo the cooperation; the alert still shows
+                    report($e);
+                }
+            }
+        }
+    }
+
+    /** Closes the alert about a unit that joined automatically (the people who manage the unit). */
+    public function dismissAlert(User $user, int $rowId): void
+    {
+        $row = TradeRelationshipUnit::query()->where('organization_id', $user->organization_id)->whereNotNull('auto_added_by')->findOrFail($rowId);
+        $unit = $row->unit();
+
+        abort_if($unit === null || ! $this->access->manages($user, $unit), 403);
+
+        $row->update(['alert_dismissed_at' => now()]);
+    }
+
+    public function reject(User $user, string|int $token): void
     {
         DB::transaction(function () use ($user, $token) {
             $invitation = $this->lockPending($token);
@@ -294,6 +519,8 @@ class TradeRelationshipService
             ->when(! $this->access->isOwner($user), fn ($query) => $query->where('invited_by', $user->id))
             ->with('inviteeOrganization:id,name')
             ->orderByDesc('id')->limit(50)->get()
+            // an invitation waiting for an answer is not shown next to a cooperation that already covers it
+            ->reject(fn (TradeInvitation $invitation) => $invitation->isPending() && $this->coveredByCooperation($invitation))
             ->map(fn (TradeInvitation $invitation) => [
                 'id' => $invitation->id,
                 'partner' => $invitation->inviteeOrganization?->name,
@@ -310,6 +537,8 @@ class TradeRelationshipService
             'sent' => $sent,
             'can_invite' => Gate::forUser($user)->allows('invite', TradeInvitation::class),
             'is_owner' => $this->access->isOwner($user),
+            'targets' => $this->targets($organizationId),
+            'own' => $this->ownCooperation($organizationId),
             // the units the person may put in the scope of an invitation (only warehouses can be on the supplier side)
             'units' => collect($this->access->managedUnits($user))->map(fn (UnitRef $unit) => [
                 'ref' => $unit->ref(),
@@ -319,6 +548,95 @@ class TradeRelationshipService
                 'warehouse' => $unit->isWarehouse(),
             ])->values()->all(),
         ];
+    }
+
+    /**
+     * The units of other organizations that can be invited (names only, no addresses): the invited side is found by the
+     * server from the chosen unit.
+     *
+     * @return list<array{ref: string, name: string, warehouse: bool}>
+     */
+    private function targets(int $organizationId): array
+    {
+        $targets = [];
+
+        $taken = $this->takenTargets($organizationId);
+
+        foreach (HeadquarterType::cases() as $type) {
+            foreach ([UnitLevel::Headquarters, UnitLevel::Branch] as $level) {
+                $unit = new UnitRef($type, $level, 0);
+
+                foreach ($unit->modelClass()::query()->where('organization_id', '!=', $organizationId)->with('organization:id,name')->orderBy('name')->limit(300)->get(['id', 'name', 'organization_id']) as $model) {
+                    $ref = (new UnitRef($type, $level, $model->id))->ref();
+                    $roles = array_values(array_unique([...($taken['units'][$ref] ?? []), ...($taken['organizations'][$model->organization_id] ?? [])]));
+
+                    // "taken" lists the roles in which this unit is already invited or in cooperation (the page hides it then)
+                    $targets[] = ['ref' => $ref, 'name' => $model->name, 'organization_id' => $model->organization_id, 'organization' => (string) $model->organization?->name, 'warehouse' => $type === HeadquarterType::Warehouse, 'taken' => $roles];
+                }
+            }
+        }
+
+        return $targets;
+    }
+
+    /**
+     * The units of the person's own organization: they cooperate without invitations (shops order from the organization's
+     * warehouses, warehouses present offers and order from other warehouses, their own too).
+     *
+     * @return array{shops: list<string>, warehouses: list<string>}
+     */
+    private function ownCooperation(int $organizationId): array
+    {
+        $names = fn (HeadquarterType $type) => collect($this->access->allUnits($organizationId, $type))->map(fn (UnitRef $unit) => (string) $unit->find($organizationId)?->name)->filter()->values()->all();
+
+        return ['shops' => $names(HeadquarterType::Shop), 'warehouses' => $names(HeadquarterType::Warehouse)];
+    }
+
+    /**
+     * Where this organization has already invited or cooperates, per role (the role of this organization: "supplier" when
+     * it offers, "buyer" when it orders): units with an invitation waiting, units in the scope of a running cooperation,
+     * and whole organizations with an invitation sent to an address (no unit).
+     *
+     * @return array{units: array<string, list<string>>, organizations: array<int, list<string>>}
+     */
+    private function takenTargets(int $organizationId): array
+    {
+        $units = [];
+        $organizations = [];
+
+        $pending = TradeInvitation::query()
+            ->where('inviter_organization_id', $organizationId)
+            ->where('status', TradeInvitationStatus::Pending->value)->where('expires_at', '>', now())
+            ->get(['invitee_organization_id', 'invitee_unit_ref', 'inviter_role']);
+
+        foreach ($pending as $invitation) {
+            if ($invitation->invitee_unit_ref === null) {
+                $organizations[$invitation->invitee_organization_id][] = $invitation->inviter_role->value;
+            } else {
+                $units[$invitation->invitee_unit_ref][] = $invitation->inviter_role->value;
+            }
+        }
+
+        $relationships = TradeRelationship::query()
+            ->where(fn ($query) => $query->where('supplier_organization_id', $organizationId)->orWhere('buyer_organization_id', $organizationId))
+            ->whereIn('status', [TradeRelationshipStatus::Active->value, TradeRelationshipStatus::Suspended->value])
+            ->with(['units' => fn ($rows) => $rows->whereNull('revoked_at')])
+            ->get();
+
+        foreach ($relationships as $relationship) {
+            $mine = $relationship->sideOf($organizationId);
+
+            if ($mine === null) {
+                continue;
+            }
+
+            // the units of the partner (the opposite side) are already in the cooperation
+            foreach ($relationship->units->where('side', $mine->opposite()) as $row) {
+                $units[$row->unit_ref][] = $mine->value;
+            }
+        }
+
+        return ['units' => $units, 'organizations' => $organizations];
     }
 
     /**
@@ -393,11 +711,40 @@ class TradeRelationshipService
         });
     }
 
-    private function lockPending(string $token): TradeInvitation
+    /**
+     * Whether a running cooperation (active or suspended) already exists between the two organizations in the direction of
+     * the invitation and, when the invitation is for one unit, that unit is already in its scope on the invited side.
+     */
+    private function coveredByCooperation(TradeInvitation $invitation): bool
     {
-        $invitation = strlen($token) === 64
-            ? TradeInvitation::query()->where('token_hash', TradeInvitation::hashToken($token))->lockForUpdate()->first()
-            : null;
+        [$supplierOrg, $buyerOrg] = $invitation->inviter_role === TradeSide::Supplier
+            ? [$invitation->inviter_organization_id, $invitation->invitee_organization_id]
+            : [$invitation->invitee_organization_id, $invitation->inviter_organization_id];
+
+        $relationship = TradeRelationship::query()
+            ->where('supplier_organization_id', $supplierOrg)->where('buyer_organization_id', $buyerOrg)
+            ->whereIn('status', [TradeRelationshipStatus::Active->value, TradeRelationshipStatus::Suspended->value])
+            ->first();
+
+        if ($relationship === null) {
+            return false;
+        }
+
+        if ($invitation->invitee_unit_ref === null) {
+            return true;
+        }
+
+        return $relationship->units()->where('side', $invitation->inviteeSide()->value)->where('unit_ref', $invitation->invitee_unit_ref)->whereNull('revoked_at')->exists();
+    }
+
+    /** The invitation from the link (its token) or, inside the panel, by its number (then the policy decides who answers). */
+    private function lockPending(string|int $ref): TradeInvitation
+    {
+        $invitation = match (true) {
+            is_int($ref) => TradeInvitation::query()->whereKey($ref)->lockForUpdate()->first(),
+            strlen($ref) === 64 => TradeInvitation::query()->where('token_hash', TradeInvitation::hashToken($ref))->lockForUpdate()->first(),
+            default => null,
+        };
 
         abort_if($invitation === null, 404);
 
@@ -482,7 +829,7 @@ class TradeRelationshipService
      *
      * @param  list<UnitRef>  $units
      */
-    private function addUnits(TradeRelationship $relationship, TradeSide $side, int $organizationId, array $units, ?int $grantedBy): void
+    private function addUnits(TradeRelationship $relationship, TradeSide $side, int $organizationId, array $units, ?int $grantedBy, ?int $autoAddedBy = null): void
     {
         foreach ($units as $unit) {
             $key = $relationship->id.':'.$side->value.':'.$unit->ref();
@@ -497,6 +844,7 @@ class TradeRelationshipService
                 'organization_id' => $organizationId,
                 'unit_ref' => $unit->ref(),
                 'granted_by' => $grantedBy,
+                'auto_added_by' => $autoAddedBy,
                 'active_key' => $key,
                 ...$unit->columns(),
             ]);

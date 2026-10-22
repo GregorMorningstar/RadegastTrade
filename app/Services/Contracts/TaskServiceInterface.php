@@ -2,7 +2,9 @@
 
 namespace App\Services\Contracts;
 
+use App\Models\Task;
 use App\Models\User;
+use App\Support\TaskAccessScope;
 
 interface TaskServiceInterface
 {
@@ -44,6 +46,36 @@ interface TaskServiceInterface
      * @return array<string, mixed> the new task
      */
     public function create(User $actor, array $data): array;
+
+    /**
+     * Step one of finishing a task that asks for a confirmation by an e-mailed code: e-mails a 6-digit code to the person
+     * who is about to mark it as done (only a person who may complete it right now). Nothing is recorded yet.
+     *
+     * @return array{pending: bool, title: string, valid_minutes: int}
+     */
+    public function requestCompletionCode(User $actor, int $taskId): array;
+
+    /**
+     * Step two: the code from the e-mail records the person's part (a standing task: today's day) as done. Five wrong
+     * codes, another day or the passing of the time drop the code.
+     *
+     * @return array<string, mixed> the task
+     */
+    public function completeWithCode(User $actor, int $taskId, string $code): array;
+
+    /**
+     * What the person may see, as a scope built only from their account (null for the administrator, who sees every
+     * organization read-only); 403 for an account without a place in the structure.
+     */
+    public function visibilityScope(User $actor): ?TaskAccessScope;
+
+    /**
+     * The tasks as the person sees them (what they may do with each, who has done their part).
+     *
+     * @param  iterable<Task>  $tasks
+     * @return list<array<string, mixed>>
+     */
+    public function present(User $actor, iterable $tasks): array;
 
     /**
      * Changes a task. Its creator and the owner of the organization may change everything; anyone else who sees the

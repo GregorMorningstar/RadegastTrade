@@ -14,9 +14,17 @@ type Invitation = {
     locked: boolean;
 };
 
+type StandaloneBranch = {
+    id: number;
+    name: string;
+    barcode: string | null;
+    people: { id: number; name: string; email: string; role: string }[];
+};
+
 type Props = {
     type: 'shops' | 'warehouses';
     headquarters: { id: number; name: string }[];
+    standalone: StandaloneBranch[];
     newInvitations: Invitation[];
 };
 
@@ -29,14 +37,19 @@ const texts = {
  * Branches of the shops or warehouses (organization owner): the owner invites the leader of a new branch in one of
  * the main headquarters (the invited person founds the branch after accepting), and sees the branches with their people.
  */
-export default function OrganizationBranches({ type, headquarters, newInvitations }: Props) {
+export default function OrganizationBranches({ type, headquarters, standalone, newInvitations }: Props) {
     const text = texts[type];
     const form = useForm({ email: '', phone: '' });
     const [headquarter, setHeadquarter] = useState('');
 
     const submit = (event: FormEvent) => {
         event.preventDefault();
-        form.post(`/platform/organization/${type}/${headquarter}/branches/invitations`, {
+        // no headquarters chosen: the shop or warehouse is founded straight under the organization
+        const url = headquarter === 'standalone'
+            ? `/platform/organization/${type}/branches/standalone-invitations`
+            : `/platform/organization/${type}/${headquarter}/branches/invitations`;
+
+        form.post(url, {
             preserveScroll: true,
             onSuccess: () => form.reset(),
         });
@@ -55,13 +68,11 @@ export default function OrganizationBranches({ type, headquarters, newInvitation
             <Content>
                 <Card title={`Zaproś kierownika nowej placówki ${text.noun}`} color="success" className="mb-4">
                     <p className="mb-3 text-sm text-[#6c757d]">
-                        Wybierz główną siedzibę, do której należy placówka, i podaj e-mail oraz telefon kierownika. Zaproszona osoba dostaje rolę{' '}
-                        <strong>{text.role}</strong>; po przyjęciu zaproszenia zakłada placówkę i podaje jej nazwę oraz NIP.
+                        Wybierz główną siedzibę, do której należy placówka, albo „bez siedziby”, żeby założyć ją bezpośrednio pod organizacją, i podaj e-mail oraz telefon kierownika. Zaproszona osoba dostaje rolę{' '}
+                        <strong>{text.role}</strong>; po przyjęciu zaproszenia zakłada placówkę i podaje jej nazwę oraz NIP. Placówkę bez siedziby można później dołączyć do siedziby.
                     </p>
 
-                    {headquarters.length === 0 ? (
-                        <p className="text-sm text-[#6c757d]">Najpierw zaproś kierownika głównej siedziby: placówka należy do siedziby.</p>
-                    ) : (
+                    {(
                         <form onSubmit={submit} className="flex flex-wrap items-start gap-2">
                             <select
                                 value={headquarter}
@@ -71,6 +82,7 @@ export default function OrganizationBranches({ type, headquarters, newInvitation
                                 className="max-w-64 rounded border border-[#ced4da] px-3 py-1.5 text-sm"
                             >
                                 <option value="">— wybierz główną siedzibę —</option>
+                                <option value="standalone">— bez siedziby (bezpośrednio pod organizacją) —</option>
                                 {headquarters.map((item) => (
                                     <option key={item.id} value={item.id}>
                                         {item.name}
@@ -129,10 +141,80 @@ export default function OrganizationBranches({ type, headquarters, newInvitation
                     )}
                 </Card>
 
+                <StandalonePanel type={type} standalone={standalone} headquarters={headquarters} />
+
                 <Card title={`Placówki ${text.noun} według głównych siedzib`} color="primary">
                     <HeadquartersTree url={`/platform/organization/${type}/tree`} type={type} content="branches" />
                 </Card>
             </Content>
         </>
+    );
+}
+
+/**
+ * Branches founded straight under the organization (no main headquarters), each with its people. When a headquarters exists,
+ * the owner attaches a branch to it: the branch, its people and its pending invitations become part of that headquarters.
+ */
+function StandalonePanel({ type, standalone, headquarters }: Pick<Props, 'type' | 'standalone' | 'headquarters'>) {
+    const [target, setTarget] = useState<Record<number, string>>({});
+
+    if (standalone.length === 0) {
+        return null;
+    }
+
+    const attach = (branchId: number) => {
+        const headquarterId = target[branchId];
+
+        if (headquarterId && confirm('Dołączyć placówkę do wybranej siedziby? Jej osoby i zaproszenia przejdą do tej siedziby.')) {
+            router.post(`/platform/organization/${type}/${headquarterId}/branches/attach`, { branches: [branchId] }, { preserveScroll: true });
+        }
+    };
+
+    return (
+        <Card title="Placówki bez siedziby" color="warning" className="mb-4">
+            <ul className="space-y-3 text-sm">
+                {standalone.map((branch) => (
+                    <li key={branch.id} className="flex flex-wrap items-start justify-between gap-3 border-b border-[#dee2e6] pb-3 last:border-0 last:pb-0">
+                        <div>
+                            <p className="font-semibold">{branch.name}</p>
+                            {branch.people.length === 0 ? (
+                                <p className="text-[#6c757d]">Brak przypisanych osób.</p>
+                            ) : (
+                                <ul className="text-[#6c757d]">
+                                    {branch.people.map((person) => (
+                                        <li key={person.id}>
+                                            {person.name} ({person.role}) – {person.email}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <select
+                                value={target[branch.id] ?? ''}
+                                onChange={(e) => setTarget({ ...target, [branch.id]: e.target.value })}
+                                aria-label={`Siedziba dla placówki ${branch.name}`}
+                                className="max-w-56 rounded border border-[#ced4da] px-2 py-1.5 text-sm"
+                            >
+                                <option value="">— wybierz siedzibę —</option>
+                                {headquarters.map((item) => (
+                                    <option key={item.id} value={item.id}>
+                                        {item.name}
+                                    </option>
+                                ))}
+                            </select>
+                            <button
+                                type="button"
+                                disabled={!target[branch.id]}
+                                onClick={() => attach(branch.id)}
+                                className="rounded border border-[#007bff] px-3 py-1.5 text-[#007bff] hover:bg-[#007bff] hover:text-white disabled:opacity-50"
+                            >
+                                Dołącz do siedziby
+                            </button>
+                        </div>
+                    </li>
+                ))}
+            </ul>
+        </Card>
     );
 }

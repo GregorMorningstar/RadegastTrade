@@ -64,9 +64,10 @@ class StructureListingService implements StructureListingServiceInterface
                 'id' => $branch->id,
                 'name' => $branch->name,
                 'organization' => $branch->organization->name,
-                'headquarter' => $branch->headquarter->name,
+                // null for a branch founded straight under the organization
+                'headquarter' => $branch->headquarter?->name,
                 'barcode' => $branch->barcode,
-                'NIP' => $branch->NIP ?: $branch->headquarter->NIP ?: $branch->organization->NIP,
+                'NIP' => $branch->NIP ?: $branch->headquarter?->NIP ?: $branch->organization->NIP,
                 'address' => $this->address($branch),
                 'is_active' => $branch->is_active,
                 'managers' => $this->people($branch->users),

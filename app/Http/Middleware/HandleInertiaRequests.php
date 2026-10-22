@@ -3,10 +3,13 @@
 namespace App\Http\Middleware;
 
 use App\Models\User;
+use App\Services\ColleagueInvitationService;
 use App\Services\Contracts\ApiKeyServiceInterface;
 use App\Services\Contracts\ChatServiceInterface;
 use App\Services\Contracts\UnitMembershipServiceInterface;
+use App\Services\TradeRelationshipService;
 use App\Support\TradeAccess;
+use App\Support\TradeBadges;
 use App\Support\UnitRef;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -75,6 +78,13 @@ class HandleInertiaRequests extends Middleware
             'canChat' => $user !== null && app(ChatServiceInterface::class)->canUse($user),
             // the trade module: whether the person takes part, presents offers (manages a warehouse) and manages cooperation
             'trade' => fn () => $this->tradeMenu($user),
+            // invitations waiting for an answer (cooperation, units, consents): shown in the chat and on the dashboard
+            'invitations' => fn () => $user === null ? [] : [
+                ...app(TradeRelationshipService::class)->inbox($user),
+                ...app(ColleagueInvitationService::class)->inbox($user),
+            ],
+            // the bubbles of the trade menu: new orders and new offers
+            'tradeBadges' => fn () => $user === null ? ['orders' => 0, 'offers' => 0] : app(TradeBadges::class)->counts($user),
             'rolePanel' => $user ? [
                 'base' => $user->role->basePath(),
                 'name' => $user->role->panelName(),

@@ -89,9 +89,14 @@ export function TradeTabs({ current }: { current: 'offers' | 'available' | 'orde
         { key: 'permissions', href: '/trade/permissions', label: 'Uprawnienia jednostki' },
     ];
 
+    const props = usePage().props as { trade?: { offers: boolean; manage: boolean }; tradeBadges?: { orders: number; offers: number } };
+    const trade = props.trade;
+    const badge = (key: string) => (key === 'orders' ? props.tradeBadges?.orders : key === 'available' ? props.tradeBadges?.offers : 0) ?? 0;
+    const visible = tabs.filter((tab) => (tab.key !== 'offers' || trade?.offers !== false) && (tab.key !== 'permissions' || trade?.manage !== false));
+
     return (
         <nav className="mb-4 flex flex-wrap gap-1 border-b border-[#dee2e6]">
-            {tabs.map((tab) => (
+            {visible.map((tab) => (
                 <Link
                     key={tab.key}
                     href={tab.href}
@@ -100,6 +105,7 @@ export function TradeTabs({ current }: { current: 'offers' | 'available' | 'orde
                     }`}
                 >
                     {tab.label}
+                    {badge(tab.key) > 0 && <span className="ml-1.5 rounded-full bg-[#dc3545] px-1.5 py-0.5 text-[10px] leading-none font-bold text-white">{badge(tab.key)}</span>}
                 </Link>
             ))}
         </nav>

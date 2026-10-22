@@ -38,7 +38,15 @@ class BranchController extends Controller
         return Inertia::render('platform/organization/'.$type->value.'/branches/index', [
             'type' => $type->value,
             'headquarters' => $this->headquarters->listFor($owner, $type)->map->only(['id', 'name'])->values(),
+            // branches founded straight under the organization, waiting to be attached to a headquarters created later
+            'standalone' => $this->branches->standaloneBranches($owner, $type)->map(fn ($branch) => [
+                'id' => $branch->id,
+                'name' => $branch->name,
+                'barcode' => $branch->barcode,
+                'people' => $branch->users->map(fn ($user) => ['id' => $user->id, 'name' => $user->name, 'email' => $user->email, 'role' => $user->role->label()])->values(),
+            ])->values(),
             'newInvitations' => $this->branches->pendingInvitationsForOwner($owner, $type)
+                ->concat($this->branches->pendingStandaloneInvitations($owner, $type))
                 ->map(fn (OrganizationInvitation $invitation) => [
                     'id' => $invitation->id,
                     'email' => $invitation->email,
@@ -48,6 +56,35 @@ class BranchController extends Controller
                     'locked' => $invitation->isLocked(),
                 ])->values(),
         ]);
+    }
+
+    /**
+     * Invitation of the leader of a shop or warehouse founded straight under the organization (no main headquarters).
+     */
+    public function inviteStandalone(StoreMemberInvitationRequest $request, HeadquarterType $type): RedirectResponse
+    {
+        $this->branches->inviteStandaloneAsOwner($request->user(), $type, $request->validated('email'), $request->validated('phone'));
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => 'Zaproszenie zostało wysłane.']);
+
+        return back();
+    }
+
+    /**
+     * Attaches branches that have no headquarters to a headquarters created later.
+     */
+    public function attach(Request $request, HeadquarterType $type, int $headquarter): RedirectResponse
+    {
+        $data = $request->validate([
+            'branches' => ['required', 'array', 'min:1', 'max:200'],
+            'branches.*' => ['integer'],
+        ]);
+
+        $count = $this->branches->attachToHeadquarter($request->user(), $type, $headquarter, $data['branches']);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => $count === 1 ? 'Placówka została dołączona do siedziby.' : 'Placówki zostały dołączone do siedziby.']);
+
+        return back();
     }
 
     /**

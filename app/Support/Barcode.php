@@ -2,9 +2,14 @@
 
 namespace App\Support;
 
+use App\Models\Offer;
+use App\Models\Order;
 use App\Models\Organization;
+use App\Models\ShopBranch;
 use App\Models\ShopHeadquarter;
+use App\Models\Task;
 use App\Models\User;
+use App\Models\WarehouseBranch;
 use App\Models\WarehouseHeadquarter;
 use InvalidArgumentException;
 
@@ -20,6 +25,11 @@ class Barcode
         'organization' => Organization::class,
         'warehouse_headquarter' => WarehouseHeadquarter::class,
         'shop_headquarter' => ShopHeadquarter::class,
+        'warehouse_branch' => WarehouseBranch::class,
+        'shop_branch' => ShopBranch::class,
+        'task' => Task::class,
+        'offer' => Offer::class,
+        'order' => Order::class,
     ];
 
     /**

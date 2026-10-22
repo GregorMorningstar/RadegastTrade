@@ -29,6 +29,15 @@ class UpdateTaskRequest extends FormRequest
             'starts_at' => ['sometimes', 'required', 'date'],
             'ends_at' => ['sometimes', 'nullable', 'date'],
             'depends_on_id' => ['sometimes', 'nullable', 'integer'],
+            // a standing task: the weekdays (ISO, 1 = Monday ... 7 = Sunday) it repeats on between two dates, with optional daily hours
+            'recurrence' => ['sometimes', 'nullable', 'array'],
+            'recurrence.from' => ['required_with:recurrence', 'date_format:Y-m-d'],
+            'recurrence.to' => ['required_with:recurrence', 'date_format:Y-m-d', 'after_or_equal:recurrence.from'],
+            'recurrence.days' => ['required_with:recurrence', 'array', 'min:1', 'max:7'],
+            'recurrence.days.*' => ['integer', 'between:1,7', 'distinct'],
+            'recurrence.start_time' => ['nullable', 'date_format:H:i'],
+            'recurrence.end_time' => ['nullable', 'date_format:H:i'],
+            'requires_completion_code' => ['sometimes', 'boolean'],
             // set by the backend, never by the form
             'organization_id' => ['prohibited'],
             'created_by' => ['prohibited'],

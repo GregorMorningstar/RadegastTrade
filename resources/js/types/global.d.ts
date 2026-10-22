@@ -18,6 +18,7 @@ declare module '@inertiajs/core' {
             units: { type: string; level: 'headquarters' | 'branch'; name: string }[];
             rolePanel: { base: string; name: string } | null;
             trade: { allowed: boolean; offers: boolean; manage: boolean };
+            tradeBadges: { orders: number; offers: number };
             sidebarOpen: boolean;
             currentTeam: Team | null;
             teams: Team[];

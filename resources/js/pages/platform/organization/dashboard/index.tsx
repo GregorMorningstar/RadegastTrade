@@ -2,6 +2,7 @@ import { Head, Link } from '@inertiajs/react';
 import { Building2, Store, Users, Warehouse } from 'lucide-react';
 import { useState } from 'react';
 import Barcode from 'react-barcode';
+import InvitationInbox from '@/components/trade/invitation-inbox';
 import PersonDetailsModal from '@/components/person-details-modal';
 import UserAvatar from '@/components/user-avatar';
 import { chatWindow } from '@/lib/chat-window';
@@ -63,6 +64,7 @@ export default function OrganizationOwnerDashboard({
             />
 
             <Content>
+                <InvitationInbox />
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     <SmallBox
                         color="info"

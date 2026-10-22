@@ -1,6 +1,7 @@
 import { Head } from '@inertiajs/react';
 import { Building2, Store, Users, Warehouse } from 'lucide-react';
 import Barcode from 'react-barcode';
+import InvitationInbox from '@/components/trade/invitation-inbox';
 import { Card, Content, ContentHeader, SmallBox } from '@/components/adminlte/blocks';
 import UserBarcodeCard from '@/components/user-barcode-card';
 
@@ -59,6 +60,7 @@ export default function HeadquarterDashboard({
             />
 
             <Content>
+                <InvitationInbox />
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     <SmallBox
                         color={group === 'shop' ? 'success' : 'info'}

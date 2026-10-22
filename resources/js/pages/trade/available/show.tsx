@@ -34,7 +34,7 @@ type Offer = {
         items: Item[];
         attachments: { id: number; name: string; size: number }[];
     } | null;
-    order_units: { ref: string; name: string }[];
+    order_units: { ref: string; name: string; address: { name: string; street: string; postal_code: string; city: string; country: string; phone: string } }[];
 };
 
 /**
@@ -48,7 +48,7 @@ export default function AvailableShow({ offer, idempotencyKey }: { offer: Offer;
         offer_version_id: version?.id ?? 0,
         buyer_unit: offer.order_units[0]?.ref ?? '',
         items: (version?.items ?? []).map((item) => ({ offer_item_id: item.id, qty: '' })),
-        delivery_address: { name: '', street: '', postal_code: '', city: '', country: 'Polska', phone: '' },
+        delivery_address: offer.order_units[0]?.address ?? { name: '', street: '', postal_code: '', city: '', country: 'Polska', phone: '' },
         notes: '',
         idempotency_key: idempotencyKey,
     });
@@ -66,6 +66,36 @@ export default function AvailableShow({ offer, idempotencyKey }: { offer: Offer;
         form.post('/trade/orders');
     };
 
+    // the rules of a position: at least the minimum, at most the maximum, the minimum plus a whole number of steps
+    const qtyProblem = (item: Item, raw: string): string | null => {
+        if (raw === '' || Number(raw) === 0) {
+            return null;
+        }
+
+        const qty = Number(raw);
+        const min = Number(item.min_qty);
+        const step = Number(item.qty_step);
+        const steps = (qty - min) / step;
+
+        if (!(qty > 0) || qty < min) {
+            return `Minimum: ${min}`;
+        }
+
+        if (item.max_qty !== null && qty > Number(item.max_qty)) {
+            return `Maksimum: ${Number(item.max_qty)}`;
+        }
+
+        return Math.abs(steps - Math.round(steps)) > 1e-9 ? `Krok: ${step} (od ${min})` : null;
+    };
+    const problems = Object.fromEntries((version?.items ?? []).map((item, index) => [item.id, qtyProblem(item, form.data.items[index].qty) ?? (form.errors as Record<string, string>)[`item_${item.id}`] ?? null]));
+    const hasProblem = Object.values(problems).some((problem) => problem !== null);
+    const importAddress = () => {
+        const unit = offer.order_units.find((item) => item.ref === form.data.buyer_unit);
+
+        if (unit) {
+            form.setData('delivery_address', unit.address);
+        }
+    };
     const address = (field: keyof typeof form.data.delivery_address, value: string) => form.setData('delivery_address', { ...form.data.delivery_address, [field]: value });
 
     return (
@@ -169,13 +199,28 @@ export default function AvailableShow({ offer, idempotencyKey }: { offer: Offer;
                                                 </td>
                                                 <td className={td}>
                                                     <input
-                                                        className="w-24 rounded border border-[#ced4da] px-2 py-1 text-sm"
+                                                        className={`w-24 rounded border px-2 py-1 text-sm ${problems[item.id] ? 'border-[#dc3545] bg-[#f8d7da]' : 'border-[#ced4da]'}`}
+                                                        aria-invalid={problems[item.id] !== null}
+                                                        title={problems[item.id] ?? undefined}
                                                         type="number"
-                                                        min="0"
-                                                        step="0.001"
+                                                        // the arrows jump by the step of the position, starting from its minimum
+                                                        min={item.min_qty}
+                                                        max={item.max_qty ?? undefined}
+                                                        step={item.qty_step}
                                                         value={form.data.items[index].qty}
-                                                        onChange={(e) => form.setData('items', form.data.items.map((row, i) => (i === index ? { ...row, qty: e.target.value } : row)))}
+                                                        onKeyDown={(e) => {
+                                                            // the arrow down from the minimum empties the field (the position is not ordered)
+                                                            if (e.key === 'ArrowDown' && form.data.items[index].qty !== '' && Number(form.data.items[index].qty) <= Number(item.min_qty)) {
+                                                                e.preventDefault();
+                                                                form.setData('items', form.data.items.map((row, i) => (i === index ? { ...row, qty: '' } : row)));
+                                                            }
+                                                        }}
+                                                        onChange={(e) => {
+                                                            form.clearErrors();
+                                                            form.setData('items', form.data.items.map((row, i) => (i === index ? { ...row, qty: e.target.value === '0' ? '' : e.target.value } : row)));
+                                                        }}
                                                     />
+                                                    {problems[item.id] && <p className="mt-0.5 text-xs text-[#dc3545]">{problems[item.id]}</p>}
                                                 </td>
                                             </tr>
                                         ))}
@@ -188,6 +233,19 @@ export default function AvailableShow({ offer, idempotencyKey }: { offer: Offer;
                             </Card>
 
                             <Card title="Adres dostawy">
+                                <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+                                    <button type="button" className={btnOutline} onClick={importAddress}>
+                                        Importuj adres wybranego sklepu / jednostki
+                                    </button>
+                                    <span className="text-xs text-[#6c757d]">Adres z danych jednostki; możesz go zmienić przed złożeniem zamówienia.</span>
+                                </div>
+                                {Object.entries(form.errors)
+                                    .filter(([key]) => key.startsWith('delivery_address'))
+                                    .map(([key, message]) => (
+                                        <p key={key} className="mb-1 text-xs text-[#dc3545]">
+                                            {message}
+                                        </p>
+                                    ))}
                                 <div className="grid gap-3 md:grid-cols-2">
                                     <label className="text-sm">
                                         Odbiorca
@@ -217,7 +275,7 @@ export default function AvailableShow({ offer, idempotencyKey }: { offer: Offer;
                             </Card>
 
                             <div className="flex gap-2">
-                                <button type="submit" className={btn} disabled={form.processing || lines.length === 0}>
+                                <button type="submit" className={btn} disabled={form.processing || lines.length === 0 || hasProblem}>
                                     Złóż zamówienie
                                 </button>
                                 <Link href="/trade/available" className={btnOutline}>

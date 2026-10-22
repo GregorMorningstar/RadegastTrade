@@ -38,8 +38,9 @@ class BranchSetupController extends Controller
             'email' => $user->email,
             'phone' => $user->phone,
             'organizationName' => $user->organization->name,
-            'headquarterName' => $headquarter->name,
-            'organizationNip' => $headquarter->effectiveNip(),
+            // null for a branch founded straight under the organization (no headquarters)
+            'headquarterName' => $headquarter?->name,
+            'organizationNip' => $headquarter?->effectiveNip() ?? $user->organization->NIP,
         ]);
     }
 

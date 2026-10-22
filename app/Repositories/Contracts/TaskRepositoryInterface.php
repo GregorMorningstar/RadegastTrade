@@ -54,8 +54,11 @@ interface TaskRepositoryInterface
      */
     public function executors(Task $task): array;
 
-    /** Records that the person has done their part (once) and returns the task refreshed. */
-    public function complete(Task $task, int $userId): Task;
+    /**
+     * Records that the person has done their part (once) and returns the task refreshed. A standing task is done day by day:
+     * the occurrence is the date (Y-m-d) of the day, "once" for an ordinary task.
+     */
+    public function complete(Task $task, int $userId, string $occurrence = 'once'): Task;
 
     public function delete(Task $task): void;
 

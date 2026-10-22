@@ -19,11 +19,19 @@ export function TaskCalendar({ tasks, onOpen, onReschedule }: Props) {
 
     const events = tasks.map((task) => ({
         id: String(task.id),
-        title: (task.is_milestone ? '◆ ' : '') + task.title + (task.progress ? ` (${task.progress}%)` : ''),
-        start: task.all_day ? task.starts_at.slice(0, 10) : task.starts_at,
-        end: task.all_day ? nextDay(task.ends_at) : task.ends_at,
-        allDay: task.all_day || task.is_milestone,
-        editable: task.can_edit,
+        title: (task.is_milestone ? '◆ ' : task.recurrence ? '↻ ' : '') + task.title + (task.progress && !task.recurrence ? ` (${task.progress}%)` : ''),
+        // a standing task repeats on its weekdays (FullCalendar: 0 = Sunday), inside its period (the end day is exclusive)
+        ...(task.recurrence
+            ? {
+                  daysOfWeek: task.recurrence.days.map((day) => day % 7),
+                  startRecur: task.recurrence.from,
+                  endRecur: nextDay(task.recurrence.to + 'T12:00:00'),
+                  ...(task.recurrence.start_time && task.recurrence.end_time ? { startTime: task.recurrence.start_time, endTime: task.recurrence.end_time } : {}),
+              }
+            : { start: task.all_day ? task.starts_at.slice(0, 10) : task.starts_at, end: task.all_day ? nextDay(task.ends_at) : task.ends_at }),
+        allDay: task.recurrence ? task.recurrence.start_time === null : task.all_day || task.is_milestone,
+        // a series is changed in its form (dragging one day would break it)
+        editable: task.can_edit && !task.recurrence,
         backgroundColor: priorityColors[task.priority],
         borderColor: priorityColors[task.priority],
         classNames: task.status === 'done' ? ['opacity-60', 'line-through'] : [],

@@ -1,10 +1,12 @@
 import { Head, router } from '@inertiajs/react';
+import Barcode from 'react-barcode';
 import { Card, Content, ContentHeader } from '@/components/adminlte/blocks';
 import { Badge, btn, btnDanger, btnOutline, date, Errors, money, td, th, TradeTabs } from '@/components/trade/ui';
 
 type Order = {
     id: number;
     number: string;
+    barcode: string | null;
     status: string;
     status_label: string;
     currency: string;
@@ -48,6 +50,12 @@ export default function OrderShow({ order }: { order: Order }) {
                         <p className="text-sm">
                             <Badge status={order.status} label={order.status_label} /> {order.buyer_unit} → {order.seller_unit}. Złożył(a): {order.placed_by}, {date(order.placed_at)}. Wersja oferty: {order.offer_version ?? '—'}.
                         </p>
+                        {order.barcode && (
+                            <div className="mt-3">
+                                <p className="mb-1 text-xs text-[#6c757d]">Kod kreskowy zamówienia (do skanowania przy odbiorze)</p>
+                                <Barcode value={order.barcode} format="EAN13" width={1.6} height={40} fontSize={11} margin={0} background="transparent" />
+                            </div>
+                        )}
                         {order.actions.length > 0 && (
                             <div className="mt-3 flex flex-wrap gap-2">
                                 {order.actions.map((action) => (

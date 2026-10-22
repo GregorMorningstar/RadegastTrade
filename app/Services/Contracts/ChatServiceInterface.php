@@ -37,6 +37,11 @@ interface ChatServiceInterface
     public function send(User $me, User $other, string $body): Message;
 
     /**
+     * An automatic message (about an order, an offer): sent only when the two may talk; otherwise nothing happens. Never throws.
+     */
+    public function trySend(User $from, User $to, string $body): bool;
+
+    /**
      * Records that $me is typing to $other (expires after a few seconds without another signal).
      */
     public function typing(User $me, User $other): void;

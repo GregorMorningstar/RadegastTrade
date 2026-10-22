@@ -3,21 +3,31 @@
 namespace App\Services;
 
 use App\Services\Contracts\ChatServiceInterface;
+use App\Enums\HeadquarterType;
 use App\Enums\UserRole;
 use App\Events\MessageSent;
 use App\Events\UserTyping;
 use App\Models\Message;
+use App\Enums\TradeSide;
+use App\Models\TradeRelationship;
 use App\Models\User;
+use App\Support\TradeAccess;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 
 /**
  * One-to-one Messenger-style chat, limited to people in one organization.
  *
- * You can only talk to an account that has the same (non-empty) organization_id.
+ * You can only talk to an account that has the same (non-empty) organization_id, and (after a cooperation is accepted)
+ * to the people who manage the units of the partner organization that are in its scope, see partnerIds().
  */
 class ChatService implements ChatServiceInterface
 {
+    public function __construct(private readonly TradeAccess $access)
+    {
+        //
+    }
+
     public const MESSAGES_LIMIT = 100;
 
     /** How long after the last signal we show that someone is typing. */
@@ -68,6 +78,10 @@ class ChatService implements ChatServiceInterface
             return true;
         }
 
+        if ($other->organization_id !== null && $other->organization_id !== $me->organization_id && in_array($other->id, $this->partnerIds($me), true)) {
+            return true;
+        }
+
         return ($this->isAdmin($me) && $other->organization_id !== null)
             || ($this->isAdmin($other) && $me->organization_id !== null);
     }
@@ -99,17 +113,20 @@ class ChatService implements ChatServiceInterface
             ->groupBy('sender_id')
             ->pluck('total', 'sender_id');
 
+        $partners = $this->partnerIds($me);
+
         return User::query()
-            ->where(function ($query) use ($me) {
+            ->where(function ($query) use ($me, $partners) {
                 if ($this->isAdmin($me)) {
                     // the administrator talks to people who belong to some organization
                     $query->whereNotNull('organization_id');
                 } else {
                     // organization members, plus the platform administrators
-                    $query->where('organization_id', $me->organization_id)->orWhereIn('role', [UserRole::Admin, UserRole::Manager]);
+                    $query->where('organization_id', $me->organization_id)->orWhereIn('role', [UserRole::Admin, UserRole::Manager])->orWhereIn('id', $partners);
                 }
             })
             ->whereKeyNot($me->id)
+            ->with('organization:id,name')
             ->get()
             ->filter(fn (User $user) => $this->allowedForInactive($me, $user))
             ->map(function (User $user) use ($last, $unread, $me) {
@@ -119,6 +136,10 @@ class ChatService implements ChatServiceInterface
                     'id' => $user->id,
                     'name' => $user->name,
                     'role' => $user->role->label(),
+                    // what the person is (for the filters and the icons of the contact list): owner, shop, warehouse or platform, and the level
+                    ...$this->placement($user),
+                    // the organization of a person from a partner organization (null for people of the own one)
+                    'organization' => $user->organization_id !== null && $user->organization_id !== $me->organization_id && ! $this->isAdmin($me) ? $user->organization?->name : null,
                     'avatar_url' => $user->avatar_url,
                     'active' => $user->isActive(),
                     'typing' => $this->isTyping($user, $me),
@@ -134,6 +155,90 @@ class ChatService implements ChatServiceInterface
                 <=> [$a['active'], $a['last_message']['created_at'] ?? '', $b['name']])
             ->values()
             ->all();
+    }
+
+    /**
+     * People of partner organizations the person may talk to: when a cooperation (active or suspended) has a unit of the
+     * person's own in its scope, the people who manage the partner's units in that scope, and the two who started it (the
+     * one who invited and the one who answered). Only people who manage a unit in the scope take part, on both sides, so
+     * the rule is the same from either end and ends with the cooperation.
+     *
+     * @return list<int>
+     */
+    private function partnerIds(User $me): array
+    {
+        if ($me->organization_id === null || $me->is_active === false || $this->isAdmin($me)) {
+            return [];
+        }
+
+        $mine = array_map(fn ($unit) => $unit->ref(), $this->access->managedUnits($me));
+
+        if ($mine === []) {
+            return [];
+        }
+
+        $organizationId = (int) $me->organization_id;
+        $ids = [];
+
+        $relationships = TradeRelationship::query()
+            ->where(fn ($query) => $query->where('supplier_organization_id', $organizationId)->orWhere('buyer_organization_id', $organizationId))
+            ->whereIn('status', ['active', 'suspended'])
+            ->with(['units' => fn ($rows) => $rows->whereNull('revoked_at'), 'invitation:id,invited_by,responded_by,inviter_organization_id'])
+            ->get();
+
+        foreach ($relationships as $relationship) {
+            $side = $relationship->sideOf($organizationId);
+
+            if ($side === null || $relationship->units->filter(fn ($row) => $row->side === $side && in_array($row->unit_ref, $mine, true))->isEmpty()) {
+                continue;
+            }
+
+            $partnerOrganization = $side === TradeSide::Supplier ? $relationship->buyer_organization_id : $relationship->supplier_organization_id;
+
+            foreach ($relationship->units->filter(fn ($row) => $row->side === $side->opposite()) as $row) {
+                if (($unit = $row->unit()) !== null) {
+                    foreach ($this->access->managersOf($unit, (int) $partnerOrganization) as $manager) {
+                        $ids[$manager->id] = true;
+                    }
+                }
+            }
+
+            $invitation = $relationship->invitation;
+
+            if ($invitation !== null) {
+                $starter = $invitation->inviter_organization_id === $organizationId ? $invitation->responded_by : $invitation->invited_by;
+
+                if ($starter !== null) {
+                    $ids[$starter] = true;
+                }
+            }
+        }
+
+        return User::query()->whereIn('id', array_keys($ids))->where('organization_id', '!=', $organizationId)->where('is_active', true)->pluck('id')->all();
+    }
+
+    /**
+     * Where the person stands in the structure: "kind" is owner / shop / warehouse / platform, "level" is organization /
+     * headquarters / branch / worker / platform.
+     *
+     * @return array{kind: string, level: string}
+     */
+    private function placement(User $user): array
+    {
+        $role = $user->role;
+
+        return match (true) {
+            $role === UserRole::ORGANIZATION_OWNER => ['kind' => 'owner', 'level' => 'organization'],
+            $role->isShop() || $role->isWarehouse() => [
+                'kind' => $role->isShop() ? 'shop' : 'warehouse',
+                'level' => match (true) {
+                    HeadquarterType::forRole($role) !== null => 'headquarters',
+                    HeadquarterType::forLeaderRole($role) !== null => 'branch',
+                    default => 'worker',
+                },
+            ],
+            default => ['kind' => 'platform', 'level' => 'platform'],
+        };
     }
 
     public function unreadTotal(User $me): int
@@ -181,6 +286,18 @@ class ChatService implements ChatServiceInterface
         }
 
         return $message;
+    }
+
+    public function trySend(User $from, User $to, string $body): bool
+    {
+        try {
+            $this->send($from, $to, $body);
+
+            return true;
+        } catch (\Throwable $e) {
+            // not allowed to talk (another organization, no cooperation) or the chat is down: the action goes on without it
+            return false;
+        }
     }
 
     /**

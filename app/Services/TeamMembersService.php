@@ -107,7 +107,7 @@ class TeamMembersService implements TeamMembersServiceInterface
         $type = HeadquarterType::forLeaderRole($member->role) ?? HeadquarterType::forWorkerRole($member->role);
 
         abort_unless(
-            $type !== null && $member->organization_id && $member->{$type->headquarterColumn()} && $member->{$type->branchColumn()},
+            $type !== null && $member->organization_id && $member->{$type->branchColumn()},
             403,
         );
 

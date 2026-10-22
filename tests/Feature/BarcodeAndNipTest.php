@@ -16,9 +16,9 @@ test('każda encja dostaje poprawny EAN-13 z własnym prefiksem z konfiguracji',
     $shop = $org->shopHeadquarters()->create(['name' => 'S']);
 
     expect($user->barcode)->toStartWith('2011')
-        ->and($org->barcode)->toStartWith('2002')
-        ->and($warehouse->barcode)->toStartWith('2003')
-        ->and($shop->barcode)->toStartWith('2004');
+        ->and($org->barcode)->toStartWith('2101')
+        ->and($warehouse->barcode)->toStartWith('2201')
+        ->and($shop->barcode)->toStartWith('2301');
 
     foreach ([$user, $org, $warehouse, $shop] as $model) {
         expect(Barcode::isValidEan13($model->barcode))->toBeTrue();
@@ -91,4 +91,46 @@ test('placówka bez NIP dziedziczy NIP organizacji', function () {
 
     expect($hq->NIP)->toBeNull()
         ->and($hq->effectiveNip())->toBe('1111111111');
+});
+
+test('schemat prefiksów: 4 cyfry z zakresu 2000-2999, każdy rodzaj rekordu ma własny, rodziny zgodne z opisem', function () {
+    $prefixes = config('barcode.prefixes');
+
+    foreach ($prefixes as $key => $prefix) {
+        expect(Barcode::prefix($key))->toBe($prefix)->and($prefix)->toMatch('/^2\d{3}$/');
+    }
+
+    // no two kinds share a prefix (the scanner recognises the record by it)
+    expect(collect($prefixes)->unique())->toHaveCount(count($prefixes));
+
+    // the first two digits are the family
+    $families = ['user' => '20', 'organization' => '21', 'warehouse_headquarter' => '22', 'warehouse_branch' => '22', 'shop_headquarter' => '23', 'shop_branch' => '23',
+        'product' => '24', 'product_category' => '24', 'task' => '25', 'offer' => '26', 'order' => '26'];
+
+    foreach ($families as $key => $family) {
+        expect(substr($prefixes[$key], 0, 2))->toBe($family, "rodzina prefiksu [$key]");
+    }
+
+    // every kind of the config has its family listed here (a new kind has to be placed in the scheme on purpose)
+    expect(array_keys($prefixes))->toEqualCanonicalizing(array_keys($families));
+});
+
+test('placówki, zadania i oferty dostają kody ze swoimi prefiksami i są rozpoznawane po kodzie', function () {
+    $org = Organization::create(['name' => 'Org']);
+    $shopHq = $org->shopHeadquarters()->create(['name' => 'S']);
+    $warehouseHq = $org->warehouseHeadquarters()->create(['name' => 'H']);
+    $shopBranch = App\Models\ShopBranch::create(['organization_id' => $org->id, 'shop_headquarter_id' => $shopHq->id, 'name' => 'Sklep 1']);
+    $warehouseBranch = App\Models\WarehouseBranch::create(['organization_id' => $org->id, 'warehouse_headquarter_id' => $warehouseHq->id, 'name' => 'Magazyn 1']);
+    $task = (new App\Models\Task)->forceFill(['organization_id' => $org->id, 'title' => 'Zadanie', 'starts_at' => now(), 'ends_at' => now()->addHour()]);
+    $task->save();
+    $offer = App\Models\Offer::create(['organization_id' => $org->id, 'number' => 'OF/1', 'unit_ref' => 'warehouses:headquarters:'.$warehouseHq->id, 'warehouse_headquarter_id' => $warehouseHq->id]);
+
+    $expected = ['2202' => $warehouseBranch, '2302' => $shopBranch, '2501' => $task, '2601' => $offer, '2201' => $warehouseHq, '2301' => $shopHq, '2101' => $org];
+
+    foreach ($expected as $prefix => $model) {
+        expect($model->fresh()->barcode)->toStartWith((string) $prefix)->and(Barcode::isValidEan13($model->fresh()->barcode))->toBeTrue()
+            ->and(Barcode::resolve($model->fresh()->barcode)?->is($model))->toBeTrue();
+    }
+
+    expect(collect($expected)->map(fn ($model) => $model->fresh()->barcode)->unique())->toHaveCount(count($expected));
 });

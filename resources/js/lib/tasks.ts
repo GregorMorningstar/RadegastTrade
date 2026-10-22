@@ -6,6 +6,8 @@ export type Task = {
     id: number;
     title: string;
     description: string | null;
+    /** EAN-13 of the task (prefix 25xx, see config/barcode.php) */
+    barcode: string | null;
     priority: 'low' | 'normal' | 'high' | 'urgent';
     priority_label: string;
     status: 'todo' | 'in_progress' | 'done';
@@ -13,6 +15,13 @@ export type Task = {
     progress: number;
     is_milestone: boolean;
     all_day: boolean;
+    /** A standing task: the period, the weekdays (ISO, 1 = Monday ... 7 = Sunday) and the daily hours (null = the whole day) */
+    recurrence: { from: string; to: string; days: number[]; start_time: string | null; end_time: string | null; label: string } | null;
+    occurs_today: boolean;
+    /** Finishing the task (or a day of a standing one) needs a code from the e-mail of the person who does it */
+    requires_completion_code: boolean;
+    /** The days (Y-m-d) the person has marked as done (a standing task) */
+    done_dates: string[];
     starts_at: string;
     ends_at: string;
     depends_on_id: number | null;
@@ -27,6 +36,11 @@ export type Task = {
     executors_done: number;
     executors: { id: number; name: string; role: string; done: boolean }[];
 };
+
+/** The answer to asking for the completion code: the code went to the e-mail of the person */
+export type CompletionCodeRequest = { pending: true; title: string; valid_minutes: number };
+
+export type TaskSearchResult = { data: Task[]; current_page: number; last_page: number; total: number; per_page: number };
 
 export type Targets = {
     organization: boolean;
@@ -87,6 +101,15 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
 
 export const tasksApi = {
     create: (data: Record<string, unknown>) => call<Task>('POST', '/tasks', data),
+    requestCompletionCode: (id: number) => call<CompletionCodeRequest>('POST', `/tasks/${id}/completion-code`),
+    complete: (id: number, code: string) => call<Task>('POST', `/tasks/${id}/complete`, { code }),
+    search: (filters: Record<string, string | number | boolean>) => {
+        const params = new URLSearchParams();
+
+        Object.entries(filters).forEach(([key, value]) => value !== '' && value !== false && params.set(key, String(value === true ? 1 : value)));
+
+        return call<TaskSearchResult>('GET', `/tasks/search?${params.toString()}`);
+    },
     update: (id: number, data: Record<string, unknown>) => call<Task>('PATCH', `/tasks/${id}`, data),
     reschedule: (id: number, data: { starts_at: string; ends_at: string; all_day?: boolean }) => call<Task>('PATCH', `/tasks/${id}/schedule`, data),
     remove: (id: number) => call<void>('DELETE', `/tasks/${id}`),

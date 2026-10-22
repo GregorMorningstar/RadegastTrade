@@ -27,6 +27,13 @@ class OfferPolicy
         return $this->access->canTrade($user);
     }
 
+    /** The list of "my offers": only for people of the owner's level or of a warehouse (a shop only buys, so has no offers of its own). */
+    public function viewOwn(User $user): bool
+    {
+        return $this->access->canTrade($user)
+            && ($this->access->isOwner($user) || collect($this->access->viewUnits($user))->contains(fn (UnitRef $unit) => $unit->isWarehouse()));
+    }
+
     /** Whether the person manages at least one warehouse unit, so may present offers. */
     public function create(User $user): bool
     {

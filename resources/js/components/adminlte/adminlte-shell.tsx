@@ -48,6 +48,8 @@ type MenuItem = {
     children?: { title: string; href: string }[];
     /** Zamiast przejścia na stronę otwiera okienko czatu nad aplikacją */
     action?: "chat";
+    /** Dymek z liczbą nowych rzeczy (np. nowych zamówień) */
+    badge?: number;
 };
 
 type Props = PropsWithChildren<{
@@ -234,9 +236,9 @@ export default function AdminLteShell({
         // Handel: oferty, zamówienia, współpraca z kontrahentami (osoby z organizacją i jednostką)
         ...(props.trade?.allowed
             ? [
-                  { section: "Handel", title: "Oferty dostępne", href: "/trade/available", icon: Tag },
+                  { section: "Handel", title: "Oferty dostępne", href: "/trade/available", icon: Tag, badge: props.tradeBadges?.offers ?? 0 },
                   ...(props.trade.offers ? [{ title: "Moje oferty", href: "/trade/offers", icon: FileText }] : []),
-                  { title: "Zamówienia", href: "/trade/orders", icon: ShoppingCart },
+                  { title: "Zamówienia", href: "/trade/orders", icon: ShoppingCart, badge: props.tradeBadges?.orders ?? 0 },
                   ...(props.trade.manage
                       ? [
                             { title: "Współpraca", href: "/trade/partners", icon: Handshake },
@@ -470,6 +472,11 @@ export default function AdminLteShell({
                                 >
                                     <item.icon className="size-4 shrink-0" />
                                     <span className={label}>{item.title}</span>
+                                    {(item.badge ?? 0) > 0 && (
+                                        <span className="ml-auto rounded-full bg-[#dc3545] px-1.5 py-0.5 text-[10px] leading-none font-bold text-white" title="Nowe">
+                                            {item.badge}
+                                        </span>
+                                    )}
                                 </Link>
                             )}
                         </Fragment>

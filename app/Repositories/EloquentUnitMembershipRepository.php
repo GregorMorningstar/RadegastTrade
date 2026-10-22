@@ -69,6 +69,19 @@ class EloquentUnitMembershipRepository implements UnitMembershipRepositoryInterf
                     $units[] = ['type' => $type->value, 'level' => 'branch', 'name' => $branch->name];
                 }
             }
+
+            // branches founded straight under the organization (no headquarters): the owner sees them all, a leader or a worker their own
+            if ($owner || $branchPerson) {
+                $standalone = $branchModel::query()
+                    ->where('organization_id', $user->organization_id)
+                    ->whereNull($headquarterColumn)
+                    ->when($branchPerson, fn ($query) => $query->whereKey($user->{$branchColumn}))
+                    ->orderBy('name')->limit(20)->get(['id', 'name']);
+
+                foreach ($standalone as $branch) {
+                    $units[] = ['type' => $type->value, 'level' => 'branch', 'name' => $branch->name];
+                }
+            }
         }
 
         return $units;

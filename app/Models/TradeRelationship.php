@@ -43,6 +43,12 @@ class TradeRelationship extends Model
         return $this->belongsTo(Organization::class, 'buyer_organization_id');
     }
 
+    /** @return BelongsTo<TradeInvitation, $this> the invitation that started (or restarted) the cooperation */
+    public function invitation(): BelongsTo
+    {
+        return $this->belongsTo(TradeInvitation::class, 'invitation_id');
+    }
+
     /** @return HasMany<TradeRelationshipUnit, $this> */
     public function units(): HasMany
     {

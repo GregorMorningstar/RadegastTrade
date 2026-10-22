@@ -1,5 +1,6 @@
 import { Head } from '@inertiajs/react';
 import { Card, Content, ContentHeader } from '@/components/adminlte/blocks';
+import InvitationInbox from '@/components/trade/invitation-inbox';
 import ChatBox from '@/components/chat/chat-box';
 import { useChat } from '@/components/chat/use-chat';
 
@@ -30,6 +31,7 @@ export default function ChatIndex({
             <Head title="Czat" />
             <ContentHeader title="Czat" crumbs={[{ label: 'Panel', href: '/' }, { label: 'Czat' }]} />
             <Content>
+                <InvitationInbox />
                 {canChat ? (
                     <ChatPage organizationName={organizationName} />
                 ) : (

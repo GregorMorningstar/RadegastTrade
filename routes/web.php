@@ -123,6 +123,17 @@ Route::prefix('platform')
                 ->whereNumber('headquarter')
                 ->middleware('throttle:20,1,w10')
                 ->name('branches.invitations.store');
+            // A shop or a warehouse founded straight under the organization (no main headquarters), and attaching such
+            // branches to a headquarters created later
+            Route::post('{type}/branches/standalone-invitations', [Platform\Organization\BranchController::class, 'inviteStandalone'])
+                ->whereIn('type', ['shops', 'warehouses'])
+                ->middleware('throttle:20,1,w77')
+                ->name('branches.standalone-invitations.store');
+            Route::post('{type}/{headquarter}/branches/attach', [Platform\Organization\BranchController::class, 'attach'])
+                ->whereIn('type', ['shops', 'warehouses'])
+                ->whereNumber('headquarter')
+                ->middleware('throttle:20,1,w78')
+                ->name('branches.attach');
             Route::get('{type}/tree', Platform\Organization\HeadquartersTreeController::class)
                 ->whereIn('type', ['shops', 'warehouses'])
                 ->middleware('throttle:120,1,w11')
@@ -151,7 +162,10 @@ Route::prefix('tasks')
     ->middleware(['auth', 'verified'])
     ->group(function () {
         Route::get('data', [TaskController::class, 'data'])->middleware('throttle:120,1,w14')->name('data');
+        Route::get('search', [TaskController::class, 'search'])->middleware('throttle:60,1,w79')->name('search');
         Route::post('/', [TaskController::class, 'store'])->middleware('throttle:60,1,w15')->name('store');
+        Route::post('{task}/completion-code', [TaskController::class, 'completionCode'])->whereNumber('task')->middleware('throttle:10,10,w80')->name('completion-code');
+        Route::post('{task}/complete', [TaskController::class, 'complete'])->whereNumber('task')->middleware('throttle:20,10,w81')->name('complete');
         Route::patch('{task}', [TaskController::class, 'update'])->whereNumber('task')->middleware('throttle:120,1,w16')->name('update');
         Route::patch('{task}/schedule', [TaskController::class, 'reschedule'])->whereNumber('task')->middleware('throttle:240,1,w17')->name('schedule');
         Route::delete('{task}', [TaskController::class, 'destroy'])->whereNumber('task')->middleware('throttle:60,1,w18')->name('destroy');
@@ -353,6 +367,22 @@ Route::middleware(['auth', 'verified'])->prefix('trade')->name('trade.')->group(
     Route::get('partners', [Trade\PartnerController::class, 'index'])->name('partners.index');
     Route::post('partners/invitations', [Trade\PartnerController::class, 'invite'])->middleware('throttle:10,60,w69')->name('partners.invite');
     Route::delete('partners/invitations/{invitation}', [Trade\PartnerController::class, 'cancel'])->whereNumber('invitation')->name('partners.invitations.cancel');
+    // people of the same organization invited to the units of a cooperation (codes from the e-mail, consent of the leader's manager)
+    Route::prefix('colleagues')->name('colleagues.')->whereNumber('invitation')->group(function () {
+        Route::post('/', [Trade\ColleagueInvitationController::class, 'store'])->middleware('throttle:10,60,w80')->name('store');
+        Route::delete('{invitation}', [Trade\ColleagueInvitationController::class, 'cancel'])->name('cancel');
+        Route::post('{invitation}/reject', [Trade\ColleagueInvitationController::class, 'reject'])->middleware('throttle:20,1,w81')->name('reject');
+        Route::post('{invitation}/consent-request', [Trade\ColleagueInvitationController::class, 'requestConsent'])->middleware('throttle:5,60,w82')->name('consent-request');
+        Route::post('{invitation}/consent-code', [Trade\ColleagueInvitationController::class, 'consentCode'])->middleware('throttle:10,10,w83')->name('consent-code');
+        Route::post('{invitation}/consent', [Trade\ColleagueInvitationController::class, 'consent'])->middleware('throttle:10,10,w84')->name('consent');
+        Route::post('{invitation}/accept-code', [Trade\ColleagueInvitationController::class, 'acceptCode'])->middleware('throttle:10,10,w85')->name('accept-code');
+        Route::post('{invitation}/accept', [Trade\ColleagueInvitationController::class, 'accept'])->middleware('throttle:10,10,w86')->name('accept');
+    });
+    Route::post('partners/alerts/{row}/dismiss', [Trade\PartnerController::class, 'dismissAlert'])->whereNumber('row')->middleware('throttle:60,1,w90')->name('partners.alerts.dismiss');
+    // the same invitation opened inside the panel (from the chat or the dashboard) by its number
+    Route::get('invitations/id/{invitation}', [Trade\PartnerController::class, 'showInvitationById'])->whereNumber('invitation')->middleware('throttle:30,1,w87')->name('invitations.show-id');
+    Route::post('invitations/id/{invitation}/accept', [Trade\PartnerController::class, 'acceptById'])->whereNumber('invitation')->middleware('throttle:10,1,w88')->name('invitations.accept-id');
+    Route::post('invitations/id/{invitation}/reject', [Trade\PartnerController::class, 'rejectById'])->whereNumber('invitation')->middleware('throttle:10,1,w89')->name('invitations.reject-id');
     Route::get('invitations/{token}', [Trade\PartnerController::class, 'showInvitation'])->middleware('throttle:30,1,w70')->name('invitations.show');
     Route::post('invitations/{token}/accept', [Trade\PartnerController::class, 'accept'])->middleware('throttle:10,1,w71')->name('invitations.accept');
     Route::post('invitations/{token}/reject', [Trade\PartnerController::class, 'reject'])->middleware('throttle:10,1,w72')->name('invitations.reject');

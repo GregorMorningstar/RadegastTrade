@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\Enums\TaskPriority;
 use App\Enums\TaskStatus;
+use App\Models\Concerns\GeneratesBarcode;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -30,9 +32,22 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'starts_at',
     'ends_at',
     'depends_on_id',
+    'recurrence_from',
+    'recurrence_to',
+    'recurrence_days',
+    'daily_start_time',
+    'daily_end_time',
+    'requires_completion_code',
 ])]
 class Task extends Model
 {
+    use GeneratesBarcode;
+
+    protected function barcodeKey(): string
+    {
+        return 'task';
+    }
+
     protected function casts(): array
     {
         return [
@@ -42,8 +57,12 @@ class Task extends Model
             'completed' => 'boolean',
             'is_milestone' => 'boolean',
             'all_day' => 'boolean',
+            'requires_completion_code' => 'boolean',
             'starts_at' => 'datetime',
             'ends_at' => 'datetime',
+            'recurrence_from' => 'date',
+            'recurrence_to' => 'date',
+            'recurrence_days' => 'array',
         ];
     }
 
@@ -57,6 +76,31 @@ class Task extends Model
                 $task->progress = 100;
             }
         });
+    }
+
+    /**
+     * Whether this is a standing task: it repeats on the chosen weekdays between two dates.
+     */
+    public function isRecurring(): bool
+    {
+        return $this->recurrence_from !== null;
+    }
+
+    /**
+     * Whether the series has an occurrence on the given day (taken in the application's time zone): the day is inside the
+     * period and its weekday (ISO, 1 = Monday) is one of the chosen ones.
+     */
+    public function occursOn(CarbonInterface $day): bool
+    {
+        if (! $this->isRecurring()) {
+            return false;
+        }
+
+        $date = $day->setTimezone(config('app.timezone'))->toDateString();
+
+        return $date >= $this->recurrence_from->toDateString()
+            && $date <= $this->recurrence_to->toDateString()
+            && in_array($day->setTimezone(config('app.timezone'))->dayOfWeekIso, array_map('intval', $this->recurrence_days ?? []), true);
     }
 
     /**

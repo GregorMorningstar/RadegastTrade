@@ -40,7 +40,7 @@ abstract class EloquentBranchRepository implements BranchRepositoryInterface
             ->get();
     }
 
-    public function create(int $organizationId, int $headquarterId, array $data): ShopBranch|WarehouseBranch
+    public function create(int $organizationId, ?int $headquarterId, array $data): ShopBranch|WarehouseBranch
     {
         return $this->query()->create([
             ...$data,
@@ -49,9 +49,24 @@ abstract class EloquentBranchRepository implements BranchRepositoryInterface
         ]);
     }
 
-    public function nameExists(int $headquarterId, string $name): bool
+    public function nameExists(?int $headquarterId, string $name, ?int $organizationId = null): bool
     {
+        if ($headquarterId === null) {
+            // standalone branches: the name is unique within the organization
+            return $this->query()->where('organization_id', $organizationId)->whereNull($this->headquarterColumn())->where('name', $name)->exists();
+        }
+
         return $this->query()->where($this->headquarterColumn(), $headquarterId)->where('name', $name)->exists();
+    }
+
+    public function standalone(int $organizationId): Collection
+    {
+        return $this->query()
+            ->where('organization_id', $organizationId)
+            ->whereNull($this->headquarterColumn())
+            ->with('users:id,shop_branch_id,warehouse_branch_id,name,email,phone,role')
+            ->orderBy('name')
+            ->get();
     }
 
     public function nipInUse(string $nip): bool

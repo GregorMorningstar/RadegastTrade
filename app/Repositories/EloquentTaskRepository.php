@@ -12,6 +12,7 @@ use App\Models\TaskCompletion;
 use App\Models\User;
 use App\Models\WarehouseBranch;
 use App\Models\WarehouseHeadquarter;
+use App\Repositories\Concerns\ScopesTasks;
 use App\Repositories\Contracts\TaskRepositoryInterface;
 use App\Support\TaskAccessScope;
 use Carbon\CarbonInterface;
@@ -23,18 +24,9 @@ use InvalidArgumentException;
 
 class EloquentTaskRepository implements TaskRepositoryInterface
 {
-    private const LIMIT = 1000;
+    use ScopesTasks;
 
-    private const RELATIONS = [
-        'creator:id,name',
-        'dependsOn:id,title',
-        'completions:id,task_id,user_id',
-        'assignments.user:id,name',
-        'assignments.shopHeadquarter:id,name',
-        'assignments.warehouseHeadquarter:id,name',
-        'assignments.shopBranch:id,name',
-        'assignments.warehouseBranch:id,name',
-    ];
+    private const LIMIT = 1000;
 
     public function visible(TaskAccessScope $scope, ?CarbonInterface $from = null, ?CarbonInterface $to = null): Collection
     {
@@ -114,9 +106,9 @@ class EloquentTaskRepository implements TaskRepositoryInterface
             ->all();
     }
 
-    public function complete(Task $task, int $userId): Task
+    public function complete(Task $task, int $userId, string $occurrence = 'once'): Task
     {
-        TaskCompletion::query()->firstOrCreate(['task_id' => $task->id, 'user_id' => $userId], ['completed_at' => now()]);
+        TaskCompletion::query()->firstOrCreate(['task_id' => $task->id, 'user_id' => $userId, 'occurrence_key' => $occurrence], ['completed_at' => now()]);
 
         return $this->fresh($task);
     }
@@ -222,25 +214,13 @@ class EloquentTaskRepository implements TaskRepositoryInterface
     /** Tasks with everything a row needs loaded (no organization filter: use scoped() or the administrator path). */
     private function query(): Builder
     {
-        return Task::query()->with(self::RELATIONS)->orderBy('starts_at')->orderBy('id');
+        return Task::query()->with(self::ROW_RELATIONS)->orderBy('starts_at')->orderBy('id');
     }
 
     /** The tasks of the scope's organization that the scope lets the person see. */
     private function scoped(TaskAccessScope $scope): Builder
     {
-        return $this->query()
-            ->where('organization_id', $scope->organizationId)
-            ->when(! $scope->all, fn (Builder $query) => $query->where(fn (Builder $visible) => $visible
-                ->where('created_by', $scope->userId)
-                ->orWhereHas('assignments', fn (Builder $assignment) => $assignment->where(fn (Builder $target) => $target
-                    ->where('assignee_type', TaskAssignment::ORGANIZATION)
-                    ->orWhere(fn (Builder $user) => $user->where('assignee_type', TaskAssignment::USER)->whereIn('user_id', $scope->userIds))
-                    ->orWhere(fn (Builder $unit) => $unit->where('assignee_type', TaskAssignment::HEADQUARTERS)->where(fn (Builder $ids) => $ids
-                        ->whereIn('shop_headquarter_id', $scope->shopHeadquarterIds)
-                        ->orWhereIn('warehouse_headquarter_id', $scope->warehouseHeadquarterIds)))
-                    ->orWhere(fn (Builder $unit) => $unit->where('assignee_type', TaskAssignment::BRANCH)->where(fn (Builder $ids) => $ids
-                        ->whereIn('shop_branch_id', $scope->shopBranchIds)
-                        ->orWhereIn('warehouse_branch_id', $scope->warehouseBranchIds)))))));
+        return $this->applyScope($this->query(), $scope);
     }
 
     private function period(Builder $query, ?CarbonInterface $from, ?CarbonInterface $to): Builder
@@ -306,6 +286,6 @@ class EloquentTaskRepository implements TaskRepositoryInterface
 
     private function fresh(Task $task): Task
     {
-        return $task->fresh(self::RELATIONS);
+        return $task->fresh(self::ROW_RELATIONS);
     }
 }

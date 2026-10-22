@@ -1,6 +1,7 @@
 import { Head } from '@inertiajs/react';
 import { Building2, Store, Warehouse } from 'lucide-react';
 import Barcode from 'react-barcode';
+import InvitationInbox from '@/components/trade/invitation-inbox';
 import { Card, Content, ContentHeader, SmallBox } from '@/components/adminlte/blocks';
 import UserBarcodeCard from '@/components/user-barcode-card';
 
@@ -11,7 +12,8 @@ export type BranchDashboardProps = {
         barcode: string | null;
         NIP: string | null;
         organization: string;
-        headquarter: { name: string; barcode: string | null };
+        // null: a branch founded straight under the organization (no main headquarters)
+        headquarter: { name: string; barcode: string | null } | null;
     } | null;
 };
 
@@ -53,6 +55,7 @@ export default function BranchDashboard({
                 crumbs={[{ label: 'Panel', href: `/${group}/${panel}` }, { label: 'Dashboard' }]}
             />
             <Content>
+                <InvitationInbox />
                 {!branch ? (
                     <Card title="Dashboard" color="warning">
                         To konto nie ma przypisanej placówki.
@@ -66,7 +69,7 @@ export default function BranchDashboard({
                                 label={group === 'shop' ? 'Placówka sklepu' : 'Placówka hurtowni'}
                                 icon={Icon}
                             />
-                            <SmallBox color="warning" value={branch.headquarter.name} label="Siedziba" icon={Icon} />
+                            <SmallBox color="warning" value={branch.headquarter?.name ?? 'Bez siedziby'} label="Siedziba" icon={Icon} />
                             <SmallBox color="primary" value={branch.NIP ?? '—'} label="NIP" icon={Building2} />
                         </div>
 
@@ -77,9 +80,11 @@ export default function BranchDashboard({
                                 </p>
                                 <Code value={branch.barcode} label="Kod kreskowy placówki" />
                             </Card>
-                            <Card title={branch.headquarter.name} color="success">
-                                <Code value={branch.headquarter.barcode} label="Kod kreskowy siedziby" />
-                            </Card>
+                            {branch.headquarter && (
+                                <Card title={branch.headquarter.name} color="success">
+                                    <Code value={branch.headquarter.barcode} label="Kod kreskowy siedziby" />
+                                </Card>
+                            )}
                         </div>
                     </>
                 )}

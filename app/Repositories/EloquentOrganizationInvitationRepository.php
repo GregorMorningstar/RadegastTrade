@@ -77,6 +77,51 @@ class EloquentOrganizationInvitationRepository implements OrganizationInvitation
             ->get();
     }
 
+    public function pendingNewStandaloneBranches(Organization $organization, UserRole $leaderRole): Collection
+    {
+        return $this->standaloneQuery($organization, $leaderRole)->where('expires_at', '>', now())->latest()->get();
+    }
+
+    public function revokePendingNewStandalone(Organization $organization, UserRole $leaderRole, string $email, User $by): void
+    {
+        $this->standaloneQuery($organization, $leaderRole)
+            ->where('email', strtolower($email))
+            ->get()
+            ->each(fn (OrganizationInvitation $previous) => $previous->revoke($by));
+    }
+
+    public function hasAcceptedStandaloneWithoutBranch(User $user): bool
+    {
+        return OrganizationInvitation::query()
+            ->where('organization_id', $user->organization_id)
+            ->where('role', $user->role->value)
+            ->where('email', strtolower($user->email))
+            ->whereNull('shop_headquarter_id')
+            ->whereNull('warehouse_headquarter_id')
+            ->whereNull('shop_branch_id')
+            ->whereNull('warehouse_branch_id')
+            ->whereNotNull('accepted_at')
+            ->exists();
+    }
+
+    /**
+     * A leader invitation with neither a headquarters nor a branch: the branch is founded straight under the organization.
+     *
+     * @return Builder<OrganizationInvitation>
+     */
+    private function standaloneQuery(Organization $organization, UserRole $leaderRole): Builder
+    {
+        return OrganizationInvitation::query()
+            ->where('organization_id', $organization->id)
+            ->where('role', $leaderRole->value)
+            ->whereNull('shop_headquarter_id')
+            ->whereNull('warehouse_headquarter_id')
+            ->whereNull('shop_branch_id')
+            ->whereNull('warehouse_branch_id')
+            ->where('is_active', true)
+            ->whereNull('accepted_at');
+    }
+
     public function revokePendingNewBranch(ShopHeadquarter|WarehouseHeadquarter $headquarter, UserRole $leaderRole, string $email, User $by): void
     {
         $this->newBranchQuery($headquarter, $leaderRole)

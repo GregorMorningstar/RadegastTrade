@@ -26,9 +26,19 @@ class StoreTaskRequest extends FormRequest
             'progress' => ['nullable', 'integer', 'min:0', 'max:100'],
             'is_milestone' => ['nullable', 'boolean'],
             'all_day' => ['nullable', 'boolean'],
-            'starts_at' => ['required', 'date'],
+            'starts_at' => ['required_without:recurrence', 'nullable', 'date'],
             'ends_at' => ['nullable', 'date'],
             'depends_on_id' => ['nullable', 'integer'],
+            // a standing task: the weekdays (ISO, 1 = Monday ... 7 = Sunday) it repeats on between two dates, with optional daily hours
+            'recurrence' => ['sometimes', 'nullable', 'array'],
+            'recurrence.from' => ['required_with:recurrence', 'date_format:Y-m-d'],
+            'recurrence.to' => ['required_with:recurrence', 'date_format:Y-m-d', 'after_or_equal:recurrence.from'],
+            'recurrence.days' => ['required_with:recurrence', 'array', 'min:1', 'max:7'],
+            'recurrence.days.*' => ['integer', 'between:1,7', 'distinct'],
+            'recurrence.start_time' => ['nullable', 'date_format:H:i'],
+            'recurrence.end_time' => ['nullable', 'date_format:H:i'],
+            // the task asks the person who carries it out for a code from their e-mail before it counts as done (off by default)
+            'requires_completion_code' => ['sometimes', 'boolean'],
             // set by the backend, never by the form
             'organization_id' => ['prohibited'],
             'created_by' => ['prohibited'],

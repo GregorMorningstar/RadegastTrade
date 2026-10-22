@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Trade;
 use App\Http\Controllers\Controller;
 use App\Services\OfferService;
 use App\Support\OfferVisibility;
+use App\Support\TradeBadges;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -28,6 +29,8 @@ class AvailableOfferController extends Controller
             'unit' => ['nullable', 'string', 'max:40'],
             'q' => ['nullable', 'string', 'max:100'],
         ]);
+
+        app(TradeBadges::class)->markSeen($request->user(), 'offers');
 
         return Inertia::render('trade/available/index', [...$this->offers->availableList($request->user(), $filters), 'filters' => $filters]);
     }

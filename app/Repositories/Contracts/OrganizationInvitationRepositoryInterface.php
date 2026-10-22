@@ -70,6 +70,23 @@ interface OrganizationInvitationRepositoryInterface
     public function pendingNewBranchesOfOrganization(Organization $organization, UserRole $leaderRole): Collection;
 
     /**
+     * Pending invitations of leaders of a standalone branch (one founded under the organization, with no headquarters).
+     *
+     * @return Collection<int, OrganizationInvitation>
+     */
+    public function pendingNewStandaloneBranches(Organization $organization, UserRole $leaderRole): Collection;
+
+    /**
+     * Revokes the earlier pending standalone-branch invitations of the same address (a new one replaces them).
+     */
+    public function revokePendingNewStandalone(Organization $organization, UserRole $leaderRole, string $email, User $by): void;
+
+    /**
+     * Whether the user has an accepted invitation of a standalone-branch leader that has not produced the branch yet.
+     */
+    public function hasAcceptedStandaloneWithoutBranch(User $user): bool;
+
+    /**
      * Whether the user has an accepted invitation that has not produced a headquarters yet (they still have to
      * create it). A manager detached from a headquarters has none, so they cannot found a new one.
      */

@@ -28,6 +28,12 @@ class TradeRelationshipUnit extends Model
         return $this->belongsTo(TradeRelationship::class, 'relationship_id');
     }
 
+    /** @return BelongsTo<User, $this> */
+    public function autoAddedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'auto_added_by');
+    }
+
     public function unit(): ?UnitRef
     {
         return UnitRef::parse($this->unit_ref);

@@ -1,12 +1,13 @@
 import { usePage } from '@inertiajs/react';
-import { ArrowLeft, Search, Send } from 'lucide-react';
+import { ArrowLeft, Building2, Handshake, MapPin, Search, Send, Shield, Store, UserRound, Warehouse, Landmark } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
 import ChatRealtime from '@/components/chat/chat-realtime';
 import RealtimeBoundary from '@/components/chat/realtime-boundary';
 import type { ChatState } from '@/components/chat/use-chat';
 import UserAvatar from '@/components/user-avatar';
-import type { ChatMessage } from '@/lib/chat-api';
+import type { ChatContact, ChatMessage } from '@/lib/chat-api';
 import { echoEnabled } from '@/lib/echo';
 import { cn } from '@/lib/utils';
 
@@ -19,11 +20,47 @@ function formatTime(iso: string): string {
         : `${date.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' })} ${time}`;
 }
 
+type Filter = { id: string; label: string; icon: LucideIcon; test: (contact: ChatContact) => boolean };
+
+/** The filters of the contact list; only those that match somebody are shown. */
+const FILTERS: Filter[] = [
+    { id: 'owner', label: 'Wł. organizacji', icon: Building2, test: (c) => c.kind === 'owner' },
+    { id: 'shop', label: 'Sklepy', icon: Store, test: (c) => c.kind === 'shop' },
+    { id: 'warehouse', label: 'Hurtownie', icon: Warehouse, test: (c) => c.kind === 'warehouse' },
+    { id: 'headquarters', label: 'Gł. siedziby', icon: Landmark, test: (c) => c.level === 'headquarters' },
+    { id: 'branch', label: 'Placówki', icon: MapPin, test: (c) => c.level === 'branch' },
+    { id: 'worker', label: 'Pracownicy', icon: UserRound, test: (c) => c.level === 'worker' },
+    { id: 'partner', label: 'Partnerzy', icon: Handshake, test: (c) => c.organization !== null },
+    { id: 'platform', label: 'Administracja', icon: Shield, test: (c) => c.kind === 'platform' },
+];
+
+/** The icon that says what a contact is: the role in the structure, a handshake for a person of a partner organization. */
+function contactIcon(contact: ChatContact): LucideIcon {
+    if (contact.organization !== null) {
+        return Handshake;
+    }
+
+    if (contact.kind === 'owner') {
+        return Building2;
+    }
+
+    if (contact.kind === 'platform') {
+        return Shield;
+    }
+
+    const shop = contact.kind === 'shop';
+
+    return contact.level === 'headquarters' ? Landmark : contact.level === 'branch' ? MapPin : shop ? Store : Warehouse;
+}
+
 function ContactList({ chat }: { chat: ChatState }) {
     const [query, setQuery] = useState('');
+    const [filter, setFilter] = useState<string | null>(null);
+    const filters = useMemo(() => FILTERS.filter((item) => chat.contacts.some(item.test)), [chat.contacts]);
+    const active = filters.find((item) => item.id === filter) ?? null;
     const visible = useMemo(
-        () => chat.contacts.filter((contact) => contact.name.toLowerCase().includes(query.trim().toLowerCase())),
-        [chat.contacts, query],
+        () => chat.contacts.filter((contact) => contact.name.toLowerCase().includes(query.trim().toLowerCase()) && (active === null || active.test(contact))),
+        [chat.contacts, query, active],
     );
     const activeCount = chat.contacts.filter((contact) => contact.active).length;
 
@@ -39,8 +76,31 @@ function ContactList({ chat }: { chat: ChatState }) {
                         className="w-full bg-transparent text-sm outline-none"
                     />
                 </div>
+                {filters.length > 1 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                        {filters.map((item) => {
+                            const Icon = item.icon;
+
+                            return (
+                                <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() => setFilter(filter === item.id ? null : item.id)}
+                                    aria-pressed={filter === item.id}
+                                    className={cn(
+                                        'flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]',
+                                        filter === item.id ? 'border-[#0084ff] bg-[#0084ff] text-white' : 'border-[#ced4da] bg-white text-[#495057] hover:bg-[#f0f2f5]',
+                                    )}
+                                >
+                                    <Icon className="size-3" />
+                                    {item.label}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
                 <p className="mt-2 text-xs text-[#6c757d]">
-                    Aktywni: {activeCount} z {chat.contacts.length} osób z Twojej organizacji
+                    Aktywni: {activeCount} z {chat.contacts.length} osób{active ? ` · filtr: ${active.label} (${visible.length})` : ''}
                 </p>
             </div>
 
@@ -62,7 +122,18 @@ function ContactList({ chat }: { chat: ChatState }) {
                                 chat.selectedId === contact.id && 'bg-[#e7f3ff]',
                             )}
                         >
-                            <UserAvatar src={contact.avatar_url} name={contact.name} size={40} active={contact.active} />
+                            <span className="relative shrink-0">
+                                <UserAvatar src={contact.avatar_url} name={contact.name} size={40} active={contact.active} />
+                                {(() => {
+                                    const Icon = contactIcon(contact);
+
+                                    return (
+                                        <span className="absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full border border-white bg-[#6c757d] text-white" title={contact.role}>
+                                            <Icon className="size-2.5" />
+                                        </span>
+                                    );
+                                })()}
+                            </span>
                             <span className="min-w-0 flex-1">
                                 <span className="flex items-center justify-between gap-2">
                                     <span className={cn('truncate text-sm', contact.unread > 0 ? 'font-bold' : 'font-medium')}>
@@ -89,7 +160,7 @@ function ContactList({ chat }: { chat: ChatState }) {
                                             ? 'pisze…'
                                             : contact.last_message
                                               ? `${contact.last_message.mine ? 'Ty: ' : ''}${contact.last_message.body}`
-                                              : contact.role}
+                                              : `${contact.organization ? `${contact.organization} · ` : ''}${contact.role}`}
                                     </span>
                                     {contact.unread > 0 && (
                                         <span className="shrink-0 rounded-full bg-[#dc3545] px-1.5 py-0.5 text-[10px] font-bold text-white">
@@ -183,7 +254,7 @@ function Conversation({ chat, onBack }: { chat: ChatState; onBack?: () => void }
                 <div className="min-w-0">
                     <p className="truncate text-sm font-semibold">{chat.selected.name}</p>
                     <p className={cn('truncate text-xs', typing ? 'font-semibold text-[#0084ff]' : 'text-[#6c757d]')}>
-                        {typing ? 'pisze do Ciebie…' : `${chat.selected.active ? 'Aktywny teraz' : 'Nieaktywny'} · ${chat.selected.role}`}
+                        {typing ? 'pisze do Ciebie…' : `${chat.selected.active ? 'Aktywny teraz' : 'Nieaktywny'} · ${chat.selected.organization ? `${chat.selected.organization} · ` : ''}${chat.selected.role}`}
                     </p>
                 </div>
             </div>

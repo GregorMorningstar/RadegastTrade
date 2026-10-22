@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\OrderStatus;
+use App\Models\Concerns\GeneratesBarcode;
 use App\Support\UnitRef;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -24,7 +25,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class Order extends Model
 {
+    use GeneratesBarcode;
+
     protected $guarded = [];
+
+    protected function barcodeKey(): string
+    {
+        return 'order';
+    }
 
     protected function casts(): array
     {

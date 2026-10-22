@@ -19,6 +19,9 @@ return new class extends Migration
             $table->foreignId('organization_id')->constrained()->restrictOnDelete();
             $table->string('number', 32);
 
+            // Unique EAN-13 barcode of the offer (assigned by the model after creation, see config/barcode.php)
+            $table->string('barcode', 13)->nullable()->unique();
+
             // the unit that presents the offer: exactly one of these four, and the same as one string
             $table->foreignId('shop_headquarter_id')->nullable()->constrained()->cascadeOnDelete();
             $table->foreignId('warehouse_headquarter_id')->nullable()->constrained()->cascadeOnDelete();

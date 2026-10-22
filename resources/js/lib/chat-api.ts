@@ -2,6 +2,11 @@ export type ChatContact = {
     id: number;
     name: string;
     role: string;
+    /** Organizacja osoby ze współpracującej firmy (null dla osób z mojej organizacji) */
+    organization: string | null;
+    /** Kim jest osoba: właściciel, sklep, hurtownia lub platforma; i na jakim poziomie */
+    kind: 'owner' | 'shop' | 'warehouse' | 'platform';
+    level: 'organization' | 'headquarters' | 'branch' | 'worker' | 'platform';
     avatar_url: string;
     active: boolean;
     /** Ta osoba właśnie pisze do mnie */

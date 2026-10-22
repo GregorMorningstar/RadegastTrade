@@ -618,7 +618,7 @@ test('załączniki są chronione: pobierają je tylko osoby z dostępem do ofert
     $this->actingAs($f['mgrW'])->get($download)->assertOk();
     $this->actingAs($f['leaderB1'])->get($download)->assertNotFound();
 
-    app(OfferService::class)->publish($f['leaderW1'], $offer);
+    app(OfferService::class)->publish($f['leaderW1'], $offer, false);
     tradeShare($f['leaderW1'], $offer->refresh(), $f['b1']);
 
     // published and shared: the recipient downloads; the neighbouring branch, a stranger, a guest and the other warehouse do not
@@ -1003,4 +1003,153 @@ test('nadanie uprawnienia do zamawiania wymaga kodu z e-maila osoby nadającej',
     // the request itself is checked at once: a person of another unit is refused before any code is sent
     $request(user: $f['leaderB2'])->assertSessionHasErrors('user_id');
     $request(user: $f['leaderC1'])->assertSessionHasErrors('user_id');
+});
+
+test('zamówienie ma kod kreskowy 2602, oferta 2601, a oba da się rozpoznać po kodzie', function () {
+    $f = tradeReady();
+
+    $this->actingAs($f['leaderB1'])->post(route('trade.orders.store'), tradePayload($f['offer'], tref($f['b1'])))->assertRedirect();
+    $order = Order::sole();
+
+    expect($f['offer']->fresh()->barcode)->toStartWith('2601')->and($order->barcode)->toStartWith('2602')
+        ->and(App\Support\Barcode::isValidEan13($order->barcode))->toBeTrue()->and(App\Support\Barcode::isValidEan13($f['offer']->fresh()->barcode))->toBeTrue()
+        ->and(App\Support\Barcode::resolve($order->barcode)?->is($order))->toBeTrue()->and(App\Support\Barcode::resolve($f['offer']->fresh()->barcode)?->is($f['offer']))->toBeTrue();
+
+    // the codes reach the pages
+    $this->actingAs($f['leaderB1'])->get(route('trade.orders.show', $order->id))->assertInertia(fn ($page) => $page->where('order.barcode', $order->barcode));
+    $this->actingAs($f['leaderW1'])->get(route('trade.offers.show', $f['offer']->id))->assertInertia(fn ($page) => $page->where('offer.barcode', $f['offer']->fresh()->barcode));
+});
+
+test('oferta hurtowni jest domyślnie otwarta dla jednostek własnej organizacji: sklep i druga hurtownia zamawiają bez zaproszenia', function () {
+    $f = tradeFixture();
+    $offer = tradeOffer($f['leaderW1'], $f['w1'], publish: false);
+
+    // published without saying anything about it: it is open inside the organization at once
+    app(OfferService::class)->publish($f['leaderW1'], $offer);
+    expect($offer->fresh()->shared_internally)->toBeTrue();
+
+    $orderable = fn (User $user) => collect(app(App\Services\OrderService::class)->orderableUnits($user, $offer->fresh()))->pluck('ref')->all();
+    // the shop and the other warehouse of the same organization order from it, a unit cannot order from itself, another organization has no access
+    expect($orderable($f['leaderSA1']))->toBe([tref($f['sa1'])]);
+    expect($orderable($f['leaderW2']))->toBe([tref($f['w2'])]);
+    expect($orderable($f['leaderW1']))->not->toContain(tref($f['w1']));
+    expect($orderable($f['leaderB1']))->toBe([]);
+});
+
+test('adres dostawy: jednostka z adresem w danych (do importu) i walidacja adresu na serwerze', function () {
+    $f = tradeReady();
+    $f['b1']->forceFill(['street' => 'Kościuszki', 'building_number' => '45', 'apartment_number' => '2', 'postal_code' => '38-200', 'city' => 'Jasło', 'country' => 'PL', 'phone' => '+48 13 123 45 67'])->save();
+
+    // the page gets the address of the unit the person orders for (built by the server from the stored unit)
+    $this->actingAs($f['leaderB1'])->get(route('trade.available.show', $f['offer']->id))->assertOk()->assertInertia(fn ($page) => $page
+        ->where('offer.order_units.0.address.street', 'Kościuszki 45/2')->where('offer.order_units.0.address.postal_code', '38-200')
+        ->where('offer.order_units.0.address.country', 'Polska')->where('offer.order_units.0.address.name', $f['b1']->name));
+
+    $order = fn (array $address) => $this->actingAs($f['leaderB1'])->post(route('trade.orders.store'), tradePayload($f['offer'], tref($f['b1']), ['delivery_address' => $address]));
+    $good = ['name' => 'Sklep Rzeszów', 'street' => 'Kościuszki 45/2', 'postal_code' => '38-200', 'city' => 'Jasło', 'phone' => '+48 13 123 45 67'];
+
+    // markup, control characters, a bad postal code, a bad phone, an over-long value: all refused, nothing is placed
+    foreach ([
+        ['name' => '<script>alert(1)</script>'], ['street' => "Długa 1\r\nBcc: x@y.pl"], ['city' => 'Jasło <b>'],
+        ['postal_code' => '38<200'], ['postal_code' => '!!'], ['phone' => 'abc'], ['name' => str_repeat('a', 151)], ['city' => ''],
+    ] as $bad) {
+        $order([...$good, ...$bad])->assertSessionHasErrors();
+    }
+    expect(App\Models\Order::count())->toBe(0);
+
+    // a good address is stored as plain text (white space tidied, the country defaults to Poland)
+    $order([...$good, 'name' => '  Sklep   Rzeszów  '])->assertRedirect()->assertSessionHasNoErrors();
+    $stored = App\Models\Order::sole()->delivery_address;
+    expect($stored['name'])->toBe('Sklep Rzeszów')->and($stored['country'])->toBe('Polska');
+});
+
+test('sklep nie ma listy „Moje oferty” (tylko zamawia), a niedozwolona ilość wskazuje pozycję w błędzie', function () {
+    $f = tradeReady();
+
+    // a shop (leader and worker) only orders: no list of own offers; a warehouse and the owner have one
+    $this->actingAs($f['leaderB1'])->get(route('trade.offers.index'))->assertForbidden();
+    $this->actingAs($f['workerB1'])->get(route('trade.offers.index'))->assertForbidden();
+    $this->actingAs($f['leaderW1'])->get(route('trade.offers.index'))->assertOk();
+    $this->actingAs($f['ownerA'])->get(route('trade.offers.index'))->assertOk();
+
+    // the tab and the menu use the same flag: a shop does not get the "offers" entry
+    $this->actingAs($f['leaderB1'])->get(route('trade.available.index'))->assertInertia(fn ($page) => $page->where('trade.offers', false));
+
+    // a quantity that breaks the step is refused, naming the position so the page can colour it
+    $payload = tradePayload($f['offer'], tref($f['b1']));
+    $payload['items'][0]['qty'] = '3.5';
+    $itemId = $payload['items'][0]['offer_item_id'];
+    $this->actingAs($f['leaderB1'])->post(route('trade.orders.store'), $payload)->assertSessionHasErrors(['items', 'item_'.$itemId]);
+    expect(App\Models\Order::count())->toBe(0);
+});
+
+test('dymki w menu: nowe oferty i zamówienia (nie własne), zerują się po wejściu na listę', function () {
+    $f = tradeFixture();
+    $this->travel(5)->seconds();
+    tradeCooperate($f);
+    $offer = tradeOffer($f['leaderW1'], $f['w1']);
+    tradeShare($f['leaderW1'], $offer, $f['b1']);
+    $badges = fn (User $user) => $this->actingAs($user)->get(route('trade.partners.index'))->viewData('page')['props']['tradeBadges'];
+
+    // the buyer sees a new offer, the author does not
+    expect($badges($f['leaderB1']))->toBe(['orders' => 0, 'offers' => 1])->and($badges($f['leaderW1']))->toBe(['orders' => 0, 'offers' => 0]);
+
+    // opening the list of available offers clears the bubble
+    $this->actingAs($f['leaderB1'])->get(route('trade.available.index'))->assertOk();
+    expect($badges($f['leaderB1'])['offers'])->toBe(0);
+
+    // an order placed by the shop: new for the warehouse, not for the one who placed it
+    $this->travel(5)->seconds();
+    $this->actingAs($f['leaderB1'])->post(route('trade.orders.store'), tradePayload($offer, tref($f['b1'])))->assertRedirect();
+    expect($badges($f['leaderW1'])['orders'])->toBe(1)->and($badges($f['leaderB1'])['orders'])->toBe(0);
+
+    $this->actingAs($f['leaderW1'])->get(route('trade.orders.index', ['kind' => 'sales']))->assertOk();
+    expect($badges($f['leaderW1'])['orders'])->toBe(0);
+
+    // a change of the status made by the warehouse is new for the buyer
+    $this->travel(5)->seconds();
+    $order = App\Models\Order::sole();
+    $this->actingAs($f['leaderW1'])->post(route('trade.orders.transition', $order->id), ['to' => 'confirmed'])->assertRedirect();
+    expect($badges($f['leaderB1'])['orders'])->toBe(1)->and($badges($f['leaderW1'])['orders'])->toBe(0);
+});
+
+test('automatyczna wiadomość w czacie: o zamówieniu (do sprzedawcy i do kupującego), o ofercie udostępnionej i opublikowanej w organizacji', function () {
+    $f = tradeReady();
+    $messages = fn (User $from, User $to) => App\Models\Message::where('sender_id', $from->id)->where('recipient_id', $to->id)->pluck('body');
+
+    // the offer shared with the shop: the people who manage the unit are told
+    expect($messages($f['leaderW1'], $f['leaderB1'])->first())->toContain($f['offer']->number)->toContain('Oferty dostępne');
+
+    // a new order: the manager of the selling unit gets a message from the person who ordered
+    $this->actingAs($f['leaderB1'])->post(route('trade.orders.store'), tradePayload($f['offer'], tref($f['b1'])))->assertRedirect();
+    $order = App\Models\Order::sole();
+    expect($messages($f['leaderB1'], $f['leaderW1'])->first())->toContain($order->number)->toContain('Nowe zamówienie');
+
+    // the seller confirms: the person who ordered gets the news in the chat
+    $this->actingAs($f['leaderW1'])->post(route('trade.orders.transition', $order->id), ['to' => 'confirmed'])->assertRedirect();
+    expect($messages($f['leaderW1'], $f['leaderB1'])->last())->toContain($order->number)->toContain('Zamówienie');
+
+    // an offer published inside the organization: the managers of the other units of the organization get a message
+    $internal = tradeOffer($f['leaderW1'], $f['w1'], internal: true);
+    expect($messages($f['leaderW1'], $f['leaderSA1'])->first())->toContain($internal->number)->and($messages($f['leaderW1'], $f['leaderW2'])->first())->toContain($internal->number);
+    // nobody of another organization is written to without a cooperation that allows it, and an offer never fails because of it
+    expect(App\Models\Message::where('recipient_id', $f['leaderC1']->id)->count())->toBe(0);
+});
+
+test('wiadomość w czacie o wysłaniu zamówienia pochodzi od osoby wysyłającej z hurtowni', function () {
+    $f = tradeReady();
+    $this->actingAs($f['leaderB1'])->post(route('trade.orders.store'), tradePayload($f['offer'], tref($f['b1'])))->assertRedirect();
+    $order = App\Models\Order::sole();
+
+    $this->actingAs($f['leaderW1'])->post(route('trade.orders.transition', $order->id), ['to' => 'confirmed']);
+    $this->post(route('trade.orders.transition', $order->id), ['to' => 'fulfilled'])->assertRedirect();
+
+    // from the person who sends, naming them and the warehouse
+    $last = App\Models\Message::where('sender_id', $f['leaderW1']->id)->where('recipient_id', $f['leaderB1']->id)->latest('id')->first();
+    expect($last->body)->toContain('wysłane przez')->toContain($f['leaderW1']->name)->toContain($order->number)->toContain('Magazyn Jasło');
+
+    // the buyer's confirmation of the receipt goes back to the warehouse from the person who received it
+    $this->actingAs($f['leaderB1'])->post(route('trade.orders.transition', $order->id), ['to' => 'received'])->assertRedirect();
+    $back = App\Models\Message::where('sender_id', $f['leaderB1']->id)->where('recipient_id', $f['leaderW1']->id)->latest('id')->first();
+    expect($back->body)->toContain('odebrał(a)')->toContain($f['leaderB1']->name);
 });

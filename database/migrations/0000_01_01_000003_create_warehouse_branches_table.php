@@ -19,8 +19,11 @@ return new class extends Migration
                 ->constrained()
                 ->restrictOnDelete();
 
-            // Warehouse headquarters the branch belongs to
+            // Warehouse headquarters the branch belongs to. Empty for a warehouse founded straight under the organization; the
+            // owner attaches it to a headquarters created later. (The unique name below is not enforced over an empty
+            // headquarters: for those the application keeps the name unique within the organization.)
             $table->foreignId('warehouse_headquarter_id')
+                ->nullable()
                 ->constrained()
                 ->restrictOnDelete();
 

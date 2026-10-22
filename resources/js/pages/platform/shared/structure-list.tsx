@@ -77,7 +77,7 @@ export default function AdminStructureList({
                                         <tr key={row.id} className="border-b border-[#dee2e6] align-top last:border-0">
                                             <td className="py-2 pr-4 font-medium">{row.name}</td>
                                             <td className="py-2 pr-4">{row.organization}</td>
-                                            {hasHeadquarter && <td className="py-2 pr-4">{row.headquarter}</td>}
+                                            {hasHeadquarter && <td className="py-2 pr-4">{row.headquarter ?? 'bez siedziby'}</td>}
                                             <td className="py-2 pr-4">{row.NIP ?? '—'}</td>
                                             <td className="py-2 pr-4">{row.address || '—'}</td>
                                             <td className="py-2 pr-4">

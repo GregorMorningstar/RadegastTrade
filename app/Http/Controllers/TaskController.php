@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Tasks\RescheduleTaskRequest;
 use App\Http\Requests\Tasks\StoreTaskRequest;
 use App\Http\Requests\Tasks\UpdateTaskRequest;
+use App\Http\Requests\Tasks\SearchTasksRequest;
+use App\Services\Contracts\TaskSearchServiceInterface;
 use App\Services\Contracts\TaskServiceInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,7 +20,7 @@ use Inertia\Response;
  */
 class TaskController extends Controller
 {
-    public function __construct(private readonly TaskServiceInterface $tasks)
+    public function __construct(private readonly TaskServiceInterface $tasks, private readonly TaskSearchServiceInterface $search)
     {
         //
     }
@@ -37,9 +39,35 @@ class TaskController extends Controller
         return response()->json($this->tasks->list($request->user(), $period['from'] ?? null, $period['to'] ?? null));
     }
 
+    /**
+     * Searching the tasks the person sees (JSON, paged). What may be found follows from the account, not from the request.
+     */
+    public function search(SearchTasksRequest $request): JsonResponse
+    {
+        return response()->json($this->search->search($request->user(), $request->validated()))->header('Cache-Control', 'no-store, private');
+    }
+
     public function store(StoreTaskRequest $request): JsonResponse
     {
         return response()->json($this->tasks->create($request->user(), $request->validated()), 201);
+    }
+
+    /**
+     * Asks for the e-mail code that confirms finishing a task which requires it (the code goes to the person who finishes it).
+     */
+    public function completionCode(Request $request, int $task): JsonResponse
+    {
+        return response()->json($this->tasks->requestCompletionCode($request->user(), $task), 202);
+    }
+
+    /**
+     * Finishes the task (the person's part, or a day of a standing task) with the code from the e-mail.
+     */
+    public function complete(Request $request, int $task): JsonResponse
+    {
+        $data = $request->validate(['code' => ['required', 'digits:6']]);
+
+        return response()->json($this->tasks->completeWithCode($request->user(), $task, $data['code']));
     }
 
     public function update(UpdateTaskRequest $request, int $task): JsonResponse

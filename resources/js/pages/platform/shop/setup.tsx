@@ -4,7 +4,7 @@ type Props = {
     email: string;
     phone: string | null;
     organizationName: string;
-    headquarterName: string;
+    headquarterName: string | null;
     organizationNip: string | null;
 };
 

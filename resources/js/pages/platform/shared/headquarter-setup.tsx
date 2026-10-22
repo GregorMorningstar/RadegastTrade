@@ -29,7 +29,7 @@ type Props = {
     /** Kierownik placówki (leader) zamiast kierownika siedziby (owner) */
     branch?: boolean;
     /** Nazwa siedziby, do której należy zakładana placówka */
-    headquarterName?: string;
+    headquarterName?: string | null;
 };
 
 const texts = {
@@ -144,9 +144,15 @@ export default function HeadquarterSetupForm({
                     <p className="mt-1 text-sm text-slate-500">
                         {branch ? (
                             <>
-                                Zostałeś zaproszony jako kierownik nowej placówki {group === 'shop' ? 'sklepu' : 'hurtowni'} w siedzibie{' '}
-                                <strong>{headquarterName}</strong> (organizacja{' '}
-                                <strong>{organizationName}</strong>). Podaj nazwę placówki.
+                                Zostałeś zaproszony jako kierownik nowej placówki {group === 'shop' ? 'sklepu' : 'hurtowni'}{' '}
+                                {headquarterName ? (
+                                    <>
+                                        w siedzibie <strong>{headquarterName}</strong>
+                                    </>
+                                ) : (
+                                    <>bezpośrednio pod organizacją (bez siedziby)</>
+                                )}{' '}
+                                (organizacja <strong>{organizationName}</strong>). Podaj nazwę placówki.
                             </>
                         ) : (
                             <>

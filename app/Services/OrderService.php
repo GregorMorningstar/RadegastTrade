@@ -11,6 +11,7 @@ use App\Models\OrderItem;
 use App\Models\OrderStatusHistory;
 use App\Models\TradeRelationshipUnit;
 use App\Models\User;
+use App\Services\Contracts\ChatServiceInterface;
 use App\Notifications\OrderNotification;
 use App\Support\OfferVisibility;
 use App\Support\OrderVisibility;
@@ -19,6 +20,7 @@ use App\Support\UnitRef;
 use Brick\Math\BigDecimal;
 use Brick\Math\Exception\MathException;
 use Brick\Math\RoundingMode;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -38,6 +40,7 @@ class OrderService
         private readonly OfferVisibility $offers,
         private readonly OrderVisibility $visibility,
         private readonly AuditLogger $audit,
+        private readonly ChatServiceInterface $chat,
     ) {
         //
     }
@@ -125,7 +128,7 @@ class OrderService
 
                 $this->audit->record($user, $user->organization_id, 'order.placed', $order, ['offer' => $offer->number, 'version' => $version->version_no, 'total' => (string) $order->total, 'buyer_unit' => $buyer->ref()]);
 
-                DB::afterCommit(fn () => $this->notifyManagers($seller, $offer->organization_id, $order, 'Nowe zamówienie do potwierdzenia', 'Złożył(a): '.$user->name.', jednostka: '.$order->buyer_unit_name.'.'));
+                DB::afterCommit(fn () => $this->notifyManagers($seller, $offer->organization_id, $order, 'Nowe zamówienie do potwierdzenia', 'Złożył(a): '.$user->name.', jednostka: '.$order->buyer_unit_name.', wartość: '.$order->total.' '.$order->currency.'.', $user));
 
                 return $order;
             });
@@ -169,13 +172,13 @@ class OrderService
             OrderStatusHistory::create(['order_id' => $order->id, 'from_status' => $from->value, 'to_status' => $to->value, 'changed_by' => $user->id, 'reason' => $reason, 'created_at' => now()]);
             $this->audit->record($user, $user->organization_id, 'order.'.$to->value, $order, ['from' => $from->value, 'reason' => $reason]);
 
-            DB::afterCommit(function () use ($order, $side, $to, $reason) {
+            DB::afterCommit(function () use ($order, $side, $to, $reason, $user) {
                 $headline = 'Zamówienie: '.$to->label();
 
                 if ($side === 'seller') {
-                    $this->notifyBuyer($order, $headline, (string) $reason);
+                    $this->notifyBuyer($order, $headline, (string) $reason, $user);
                 } else {
-                    $this->notifyManagers($order->sellerUnit(), $order->seller_organization_id, $order, $headline, (string) $reason);
+                    $this->notifyManagers($order->sellerUnit(), $order->seller_organization_id, $order, $headline, (string) $reason, $user);
                 }
             });
 
@@ -220,7 +223,7 @@ class OrderService
             ->reject(fn (string $ref) => $ref === $offer->unit_ref)
             ->map(fn (string $ref) => UnitRef::parse($ref))
             ->filter(fn (?UnitRef $unit) => $unit !== null && $this->visibility->canPlaceFor($user, $unit))
-            ->map(fn (UnitRef $unit) => ['ref' => $unit->ref(), 'name' => (string) $unit->find($organizationId)?->name])
+            ->map(fn (UnitRef $unit) => ['ref' => $unit->ref(), 'name' => (string) $unit->find($organizationId)?->name, 'address' => $this->unitAddress($unit->find($organizationId))])
             ->values()->all();
     }
 
@@ -299,6 +302,7 @@ class OrderService
         return [
             'id' => $order->id,
             'number' => $order->number,
+            'barcode' => $order->barcode,
             'status' => $order->status->value,
             'status_label' => $order->status->label(),
             'currency' => $order->currency,
@@ -409,7 +413,10 @@ class OrderService
             if ($qty->isLessThanOrEqualTo(0) || $qty->isLessThan($min)
                 || ($item->max_qty !== null && $qty->isGreaterThan(BigDecimal::of($item->max_qty)))
                 || ! $qty->minus($min)->remainder($step)->isZero()) {
-                throw ValidationException::withMessages(['items' => 'Ilość dla „'.$item->name.'” jest niedozwolona (minimum, maksimum lub wielokrotność).']);
+                throw ValidationException::withMessages([
+                    'items' => 'Ilość dla „'.$item->name.'” jest niedozwolona (minimum, maksimum lub wielokrotność).',
+                    'item_'.$item->id => 'Niedozwolona ilość.',
+                ]);
             }
 
             $net = BigDecimal::of($item->unit_price)->multipliedBy($qty)->toScale(2, RoundingMode::HalfUp);
@@ -436,22 +443,71 @@ class OrderService
     }
 
     /**
+     * The address of one of the person's own units, to import into the order form (built here from the stored unit, so
+     * the page only ever gets the address of a unit the person may order for).
+     *
+     * @return array{name: string, street: string, postal_code: string, city: string, country: string, phone: string}
+     */
+    private function unitAddress(?Model $unit): array
+    {
+        $street = trim((string) $unit?->street.' '.$unit?->building_number.($unit?->apartment_number ? '/'.$unit->apartment_number : ''));
+        $country = (string) $unit?->country;
+
+        return [
+            'name' => (string) $unit?->name,
+            'street' => $street,
+            'postal_code' => (string) $unit?->postal_code,
+            'city' => (string) $unit?->city,
+            'country' => $country === '' || strtoupper($country) === 'PL' ? 'Polska' : $country,
+            'phone' => (string) $unit?->phone,
+        ];
+    }
+
+    /**
+     * The delivery address from the form, checked on the server whatever the page did: text only (no tags, no control
+     * characters, no angle brackets or other markup), the lengths, and the shape of the postal code and the phone number.
+     * The address is printed on documents and shown to the seller, so nothing but plain text is stored.
+     *
      * @param  array<string, mixed>  $address
      * @return array<string, string>
      */
     private function address(array $address): array
     {
+        $limits = ['name' => 150, 'street' => 150, 'postal_code' => 12, 'city' => 100, 'country' => 60, 'phone' => 20];
         $clean = [];
 
-        foreach (['name', 'street', 'postal_code', 'city', 'country', 'phone'] as $field) {
-            $clean[$field] = Str::limit(trim((string) ($address[$field] ?? '')), 150, '');
+        foreach ($limits as $field => $limit) {
+            $value = (string) ($address[$field] ?? '');
+
+            // no markup and no control characters (they would end up in e-mails, PDFs and the seller's page)
+            if ($value !== strip_tags($value) || preg_match('/[<>\x00-\x1F\x7F]/', $value) === 1) {
+                throw ValidationException::withMessages(['delivery_address.'.$field => 'Pole zawiera niedozwolone znaki.']);
+            }
+
+            $value = trim((string) preg_replace('/\s+/u', ' ', $value));
+
+            if (mb_strlen($value) > $limit) {
+                throw ValidationException::withMessages(['delivery_address.'.$field => 'Wartość jest za długa.']);
+            }
+
+            $clean[$field] = $value;
         }
 
         foreach (['name', 'street', 'postal_code', 'city'] as $required) {
             if ($clean[$required] === '') {
-                throw ValidationException::withMessages(['delivery_address' => 'Uzupełnij adres dostawy.']);
+                throw ValidationException::withMessages(['delivery_address.'.$required => 'Uzupełnij adres dostawy.']);
             }
         }
+
+        if (preg_match('/^[0-9A-Za-z][0-9A-Za-z \-]{1,10}[0-9A-Za-z]$/', $clean['postal_code']) !== 1) {
+            throw ValidationException::withMessages(['delivery_address.postal_code' => 'Podaj poprawny kod pocztowy.']);
+        }
+
+        if ($clean['phone'] !== '' && preg_match('/^\+?[0-9][0-9 ()\-]{4,18}$/', $clean['phone']) !== 1) {
+            throw ValidationException::withMessages(['delivery_address.phone' => 'Podaj poprawny numer telefonu.']);
+        }
+
+        $clean['country'] = $clean['country'] === '' ? 'Polska' : $clean['country'];
 
         return $clean;
     }
@@ -466,7 +522,7 @@ class OrderService
         return $order;
     }
 
-    private function notifyManagers(?UnitRef $unit, int $organizationId, Order $order, string $headline, string $detail): void
+    private function notifyManagers(?UnitRef $unit, int $organizationId, Order $order, string $headline, string $detail, ?User $from = null): void
     {
         if ($unit === null) {
             return;
@@ -474,19 +530,45 @@ class OrderService
 
         foreach ($this->access->managersOf($unit, $organizationId) as $manager) {
             $manager->notify(new OrderNotification($order->id, $order->number, $headline, $detail));
+            $this->say($from, $manager, $order, $headline, $detail);
         }
     }
 
-    private function notifyBuyer(Order $order, string $headline, string $detail): void
+    /** The same news as a message in the chat, from the person who caused it (when the two may talk). */
+    private function say(?User $from, User $to, Order $order, string $headline, string $detail): void
+    {
+        if ($from === null || $from->id === $to->id) {
+            return;
+        }
+
+        // who did it, with the unit they act for: the seller's person for confirming, rejecting and sending, the buyer's for the rest
+        $sellerSide = in_array($order->status, [OrderStatus::Confirmed, OrderStatus::Rejected, OrderStatus::Fulfilled], true);
+        $who = $from->name.' ('.($sellerSide ? $order->seller_unit_name : $order->buyer_unit_name).')';
+        $reason = $detail === '' ? '' : ' Powód/uwagi: '.$detail.'.';
+
+        $text = match ($order->status) {
+            OrderStatus::Fulfilled => 'Zamówienie '.$order->number.' zostało wysłane przez '.$who.'.',
+            OrderStatus::Confirmed => 'Zamówienie '.$order->number.' potwierdził(a) '.$who.'.',
+            OrderStatus::Rejected => 'Zamówienie '.$order->number.' odrzucił(a) '.$who.'.'.$reason,
+            OrderStatus::Received => 'Zamówienie '.$order->number.' odebrał(a) '.$who.'.',
+            OrderStatus::Cancelled => 'Zamówienie '.$order->number.' anulował(a) '.$who.'.'.$reason,
+            default => $headline.': '.$order->number.($detail === '' ? '' : ' – '.$detail).'.',
+        };
+
+        $this->chat->trySend($from, $to, $text.' (Handel → Zamówienia)');
+    }
+
+    private function notifyBuyer(Order $order, string $headline, string $detail, ?User $from = null): void
     {
         $placer = $order->placed_by === null ? null : User::query()->where('is_active', true)->find($order->placed_by);
 
         if ($placer !== null) {
             $placer->notify(new OrderNotification($order->id, $order->number, $headline, $detail));
+            $this->say($from, $placer, $order, $headline, $detail);
 
             return;
         }
 
-        $this->notifyManagers($order->buyerUnit(), $order->buyer_organization_id, $order, $headline, $detail);
+        $this->notifyManagers($order->buyerUnit(), $order->buyer_organization_id, $order, $headline, $detail, $from);
     }
 }

@@ -1,9 +1,10 @@
 import { Head, usePage } from '@inertiajs/react';
-import { CalendarDays, GanttChart, Plus, Table2 } from 'lucide-react';
+import { CalendarDays, GanttChart, Plus, Search, Table2 } from 'lucide-react';
 import { useState } from 'react';
 import { Card, Content, ContentHeader } from '@/components/adminlte/blocks';
 import { TaskCalendar } from '@/components/tasks/task-calendar';
 import { TaskForm } from '@/components/tasks/task-form';
+import { TaskSearch } from '@/components/tasks/task-search';
 import { TaskGantt } from '@/components/tasks/task-gantt';
 import { ApiError, formatDate, priorityColors, tasksApi, type Option, type Targets, type Task } from '@/lib/tasks';
 
@@ -15,12 +16,13 @@ type Props = {
     statuses: Option[];
 };
 
-type View = 'calendar' | 'gantt' | 'table';
+type View = 'calendar' | 'gantt' | 'table' | 'search';
 
 const views: { id: View; label: string; icon: typeof Table2 }[] = [
     { id: 'calendar', label: 'Kalendarz', icon: CalendarDays },
     { id: 'gantt', label: 'Wykres Gantta', icon: GanttChart },
     { id: 'table', label: 'Tabela', icon: Table2 },
+    { id: 'search', label: 'Szukaj', icon: Search },
 ];
 
 /** Tasks: calendar, Gantt chart and table over the same list; the same view for every role (the server decides what each one sees). */
@@ -28,10 +30,15 @@ export default function Tasks({ tasks: initial, can_create, targets, priorities,
     const base = usePage().props.rolePanel?.base ?? '/';
     const [tasks, setTasks] = useState<Task[]>(initial);
     const [view, setView] = useState<View>('calendar');
-    const [form, setForm] = useState<{ task: Task | null } | null>(null);
+    const [form, setForm] = useState<{ task: Task | null; recurring?: boolean } | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
+    // a counter that makes the search fetch its results again
+    const [version, setVersion] = useState(0);
 
-    const replace = (saved: Task) => setTasks((current) => (current.some((item) => item.id === saved.id) ? current.map((item) => (item.id === saved.id ? saved : item)) : [...current, saved]));
+    const replace = (saved: Task) => {
+        setTasks((current) => (current.some((item) => item.id === saved.id) ? current.map((item) => (item.id === saved.id ? saved : item)) : [...current, saved]));
+        setVersion((value) => value + 1);
+    };
 
     // Moving in time: the view shows the new place at once (the API answers with the stored task); on failure it goes back
     const reschedule = async (task: Task, startsAt: string, endsAt: string, allDay: boolean) => {
@@ -71,6 +78,7 @@ export default function Tasks({ tasks: initial, can_create, targets, priorities,
 
     const save = async (data: Record<string, unknown>) => {
         const saved = form?.task ? await tasksApi.update(form.task.id, data) : await tasksApi.create(data);
+
         replace(saved);
         setForm(null);
     };
@@ -79,6 +87,7 @@ export default function Tasks({ tasks: initial, can_create, targets, priorities,
         await tasksApi.remove(task.id);
         setTasks((current) => current.filter((item) => item.id !== task.id).map((item) => (item.depends_on_id === task.id ? { ...item, depends_on_id: null, depends_on_title: null } : item)));
         setForm(null);
+        setVersion((value) => value + 1);
     };
 
     const open = (task: Task) => setForm({ task });
@@ -109,10 +118,16 @@ export default function Tasks({ tasks: initial, can_create, targets, priorities,
                             <span>◆ kamień milowy</span>
                         </div>
                         {can_create && (
-                            <button type="button" onClick={() => setForm({ task: null })} className="flex items-center gap-1.5 rounded bg-[#28a745] px-3 py-1.5 text-sm text-white">
-                                <Plus className="size-4" />
-                                Dodaj zadanie
-                            </button>
+                            <div className="flex flex-wrap gap-2">
+                                <button type="button" onClick={() => setForm({ task: null })} className="flex items-center gap-1.5 rounded bg-[#28a745] px-3 py-1.5 text-sm text-white">
+                                    <Plus className="size-4" />
+                                    Dodaj zadanie
+                                </button>
+                                <button type="button" onClick={() => setForm({ task: null, recurring: true })} className="flex items-center gap-1.5 rounded bg-[#17a2b8] px-3 py-1.5 text-sm text-white" title="Powtarza się w wybrane dni tygodnia w podanym okresie">
+                                    <Plus className="size-4" />
+                                    Dodaj zadanie stałe
+                                </button>
+                            </div>
                         )}
                     </div>
 
@@ -121,10 +136,11 @@ export default function Tasks({ tasks: initial, can_create, targets, priorities,
                     {view === 'calendar' && <TaskCalendar tasks={tasks} onOpen={open} onReschedule={reschedule} />}
                     {view === 'gantt' && <TaskGantt tasks={tasks} onOpen={open} onReschedule={reschedule} onLink={linkTasks} onUnlink={unlinkTask} />}
                     {view === 'table' && <TaskTable tasks={sorted} onOpen={open} />}
+                    {view === 'search' && <TaskSearch statuses={statuses} priorities={priorities} onOpen={open} version={version} />}
                 </Card>
             </Content>
 
-            {form && <TaskForm task={form.task} tasks={tasks} targets={targets} priorities={priorities} statuses={statuses} canCreate={can_create} onSave={save} onDelete={remove} onClose={() => setForm(null)} />}
+            {form && <TaskForm task={form.task} recurringDefault={form.recurring === true} tasks={tasks} targets={targets} priorities={priorities} statuses={statuses} canCreate={can_create} onCompleted={(saved) => { replace(saved); setForm(null); }} onSave={save} onDelete={remove} onClose={() => setForm(null)} />}
         </>
     );
 }

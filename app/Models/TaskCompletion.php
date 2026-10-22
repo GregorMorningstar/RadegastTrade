@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $task_id
  * @property int $user_id
  */
-#[Fillable(['task_id', 'user_id', 'completed_at'])]
+#[Fillable(['task_id', 'user_id', 'completed_at', 'occurrence_key'])]
 class TaskCompletion extends Model
 {
     protected function casts(): array

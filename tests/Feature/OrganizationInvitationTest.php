@@ -372,7 +372,7 @@ test('po przyjęciu zaproszenia właściciel sam podaje nazwę organizacji, a e-
 
     expect($org->name)->toBe('Moja Firma')
         ->and($org->email)->toBe('owner@example.com')
-        ->and($org->barcode)->toStartWith('2002')
+        ->and($org->barcode)->toStartWith('2101')
         ->and($org->REGON)->toBeNull()
         ->and($user->fresh()->organization_id)->toBe($org->id)
         ->and($invitation->fresh()->organization_id)->toBe($org->id);

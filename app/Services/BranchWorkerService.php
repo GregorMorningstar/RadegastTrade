@@ -43,7 +43,7 @@ class BranchWorkerService implements BranchWorkerServiceInterface
         $type = $this->typeOfLeader($leader);
 
         abort_unless(
-            $leader->organization_id && $leader->{$type->headquarterColumn()} && $leader->{$type->branchColumn()},
+            $leader->organization_id && $leader->{$type->branchColumn()},
             403,
         );
 

@@ -6,6 +6,7 @@ use App\Services\Contracts\BranchServiceInterface;
 use App\Services\Contracts\NipServiceInterface;
 use App\Enums\HeadquarterType;
 use App\Enums\UserRole;
+use App\Models\Organization;
 use App\Models\OrganizationInvitation;
 use App\Models\ShopBranch;
 use App\Models\ShopHeadquarter;
@@ -120,10 +121,99 @@ class BranchService implements BranchServiceInterface
     }
 
     /**
+     * The organization owner invites the leader of a shop or a warehouse that is founded straight under the organization,
+     * with no main headquarters (the leader provides the details after accepting). Only the owner may do it.
+     */
+    public function inviteStandaloneAsOwner(User $owner, HeadquarterType $type, string $email, ?string $phone = null): OrganizationInvitation
+    {
+        $this->headquarters->organizationOf($owner);
+
+        return $this->issueForHeadquarter($owner, $type, null, $email, $phone);
+    }
+
+    /**
+     * Pending invitations of leaders of standalone branches of the given type.
+     *
+     * @return Collection<int, OrganizationInvitation>
+     */
+    public function pendingStandaloneInvitations(User $owner, HeadquarterType $type): Collection
+    {
+        return $this->invitations->pendingNewStandaloneBranches($this->headquarters->organizationOf($owner), $type->leaderRole());
+    }
+
+    /**
+     * The shops or warehouses of the organization that belong to no headquarters.
+     *
+     * @return Collection<int, ShopBranch|WarehouseBranch>
+     */
+    public function standaloneBranches(User $owner, HeadquarterType $type): Collection
+    {
+        return $this->repository($type)->standalone($this->headquarters->organizationOf($owner)->id);
+    }
+
+    /**
+     * Attaches standalone branches to a headquarters founded later: the branches (and their people and pending invitations)
+     * become part of it, so its manager and the tasks and rights that follow the hierarchy cover them. Only the owner may do
+     * it, only for the organization's own headquarters and branches without a headquarters, of the same type.
+     *
+     * @param  array<int, int|string>  $branchIds
+     */
+    public function attachToHeadquarter(User $owner, HeadquarterType $type, int $headquarterId, array $branchIds): int
+    {
+        $headquarter = $this->headquarters->findOwned($owner, $type, $headquarterId);
+        $ids = array_values(array_unique(array_map('intval', $branchIds)));
+
+        if ($ids === []) {
+            throw ValidationException::withMessages(['branches' => 'Wybierz co najmniej jedną placówkę do dołączenia.']);
+        }
+
+        $branchModel = $type === HeadquarterType::Shop ? ShopBranch::class : WarehouseBranch::class;
+
+        return DB::transaction(function () use ($owner, $type, $headquarter, $ids, $branchModel) {
+            $branches = $branchModel::query()
+                ->where('organization_id', $headquarter->organization_id)
+                ->whereNull($type->headquarterColumn())
+                ->whereIn('id', $ids)
+                ->lockForUpdate()
+                ->get();
+
+            // anything that is not a standalone branch of this organization and type is refused, never skipped
+            if ($branches->count() !== count($ids)) {
+                throw ValidationException::withMessages(['branches' => 'Można dołączyć tylko placówki tej organizacji, które nie należą jeszcze do żadnej siedziby.']);
+            }
+
+            // the name of a branch is unique within its headquarters
+            $taken = $this->repository($type)->forHeadquarter($headquarter->id)->pluck('name')->map(fn (string $name) => mb_strtolower($name))->all();
+
+            foreach ($branches as $branch) {
+                $name = mb_strtolower($branch->name);
+
+                if (in_array($name, $taken, true)) {
+                    throw ValidationException::withMessages(['branches' => 'Siedziba ma już placówkę o nazwie „'.$branch->name.'”. Zmień nazwę jednej z nich.']);
+                }
+
+                $taken[] = $name;
+            }
+
+            $column = $type->headquarterColumn();
+
+            $branchModel::query()->whereIn('id', $ids)->update([$column => $headquarter->id]);
+
+            // the people of the branches (leaders, workers) and the invitations still waiting follow the branch
+            User::query()->where('organization_id', $headquarter->organization_id)->whereIn($type->branchColumn(), $ids)->update([$column => $headquarter->id]);
+            OrganizationInvitation::query()->where('organization_id', $headquarter->organization_id)->whereIn($type->branchColumn(), $ids)->whereNull($column)->update([$column => $headquarter->id]);
+
+            app(AuditLogger::class)->record($owner, $owner->organization_id, 'branch.attached', $headquarter, ['branches' => $ids]);
+
+            return count($ids);
+        });
+    }
+
+    /**
      * Sends the invitation to create a branch in the headquarters: the inviter is the headquarters manager or the
      * organization owner, the invitation carries the organization and the headquarters.
      */
-    private function issueForHeadquarter(User $manager, HeadquarterType $type, ShopHeadquarter|WarehouseHeadquarter $headquarter, string $email, ?string $phone): OrganizationInvitation
+    private function issueForHeadquarter(User $manager, HeadquarterType $type, ShopHeadquarter|WarehouseHeadquarter|null $headquarter, string $email, ?string $phone): OrganizationInvitation
     {
         $role = $type->leaderRole();
         $email = strtolower($email);
@@ -144,7 +234,10 @@ class BranchService implements BranchServiceInterface
             ]);
         }
 
-        $this->invitations->revokePendingNewBranch($headquarter, $role, $email, $manager);
+        // a new invitation replaces the earlier pending ones of the same address (in the headquarters, or standalone)
+        $headquarter === null
+            ? $this->invitations->revokePendingNewStandalone($manager->organization, $role, $email, $manager)
+            : $this->invitations->revokePendingNewBranch($headquarter, $role, $email, $manager);
 
         [$invitation, $verificationCode] = $this->invitations->issue(
             $manager->organization, $email, $manager, $role, $headquarter, $phone,
@@ -182,8 +275,11 @@ class BranchService implements BranchServiceInterface
     {
         $type = HeadquarterType::forLeaderRole($leader->role);
 
-        abort_unless($type !== null && $leader->organization_id && $leader->{$type->headquarterColumn()}, 403);
+        abort_unless($type !== null && $leader->organization_id, 403);
         abort_if($leader->{$type->branchColumn()}, 403, 'Masz już przypisaną placówkę.');
+
+        // the leader of a branch in a headquarters, or one invited to found a standalone branch
+        abort_unless($leader->{$type->headquarterColumn()} || $this->invitations->hasAcceptedStandaloneWithoutBranch($leader), 403);
 
         return $type;
     }
@@ -197,8 +293,8 @@ class BranchService implements BranchServiceInterface
 
         return $type !== null
             && $leader->organization_id
-            && $leader->{$type->headquarterColumn()}
-            && ! $leader->{$type->branchColumn()};
+            && ! $leader->{$type->branchColumn()}
+            && ($leader->{$type->headquarterColumn()} || $this->invitations->hasAcceptedStandaloneWithoutBranch($leader));
     }
 
     /**
@@ -222,9 +318,10 @@ class BranchService implements BranchServiceInterface
             'id' => $branch->id,
             'name' => $branch->name,
             'barcode' => $branch->barcode,
-            'NIP' => $branch->NIP ?: $branch->headquarter->effectiveNip(),
+            'NIP' => $branch->NIP ?: ($branch->headquarter?->effectiveNip() ?? $branch->organization->NIP),
             'organization' => $branch->organization->name,
-            'headquarter' => [
+            // null for a standalone branch (founded straight under the organization)
+            'headquarter' => $branch->headquarter === null ? null : [
                 'name' => $branch->headquarter->name,
                 'barcode' => $branch->headquarter->barcode,
             ],
@@ -244,15 +341,12 @@ class BranchService implements BranchServiceInterface
         $type = $this->pendingSetupType($leader);
         $repository = $this->repository($type);
 
+        // null for a leader invited to found a standalone branch
         $headquarter = $type === HeadquarterType::Shop ? $leader->shopHeadquarter : $leader->warehouseHeadquarter;
 
-        abort_unless($headquarter->organization_id === $leader->organization_id, 403);
+        abort_unless($headquarter === null || $headquarter->organization_id === $leader->organization_id, 403);
 
         $data['name'] = trim($data['name']);
-
-        if ($repository->nameExists($headquarter->id, $data['name'])) {
-            throw ValidationException::withMessages(['name' => 'Ta siedziba ma już placówkę o tej nazwie.']);
-        }
 
         $nip = $data['NIP'] ?? null;
 
@@ -261,7 +355,7 @@ class BranchService implements BranchServiceInterface
                 throw ValidationException::withMessages(['NIP' => 'Nieprawidłowy numer NIP (błędna suma kontrolna).']);
             }
 
-            $allowed = [$leader->organization->NIP, $headquarter->effectiveNip()];
+            $allowed = array_filter([$leader->organization->NIP, $headquarter?->effectiveNip()]);
 
             if (! in_array($nip, $allowed, true) && $repository->nipInUse($nip)) {
                 throw ValidationException::withMessages([
@@ -271,14 +365,21 @@ class BranchService implements BranchServiceInterface
         }
 
         return DB::transaction(function () use ($leader, $type, $repository, $headquarter, $data) {
-            $branch = $repository->create($leader->organization_id, $headquarter->id, $data);
+            // one organization row is the lock under which the uniqueness of the name is checked and the branch is written
+            Organization::query()->whereKey($leader->organization_id)->lockForUpdate()->first();
+
+            if ($repository->nameExists($headquarter?->id, $data['name'], $leader->organization_id)) {
+                throw ValidationException::withMessages(['name' => $headquarter === null ? 'Twoja organizacja ma już placówkę bez siedziby o tej nazwie.' : 'Ta siedziba ma już placówkę o tej nazwie.']);
+            }
+
+            $branch = $repository->create($leader->organization_id, $headquarter?->id, $data);
 
             $leader->forceFill([$type->branchColumn() => $branch->id])->save();
 
             // the invitation that led to the branch points to it
             OrganizationInvitation::query()
                 ->where('organization_id', $leader->organization_id)
-                ->where($type->headquarterColumn(), $headquarter->id)
+                ->when($headquarter === null, fn ($query) => $query->whereNull($type->headquarterColumn()), fn ($query) => $query->where($type->headquarterColumn(), $headquarter->id))
                 ->where('role', $leader->role->value)
                 ->where('email', strtolower($leader->email))
                 ->whereNotNull('accepted_at')

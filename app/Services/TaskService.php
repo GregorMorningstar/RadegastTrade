@@ -6,14 +6,17 @@ use App\Enums\HeadquarterType;
 use App\Enums\TaskPriority;
 use App\Enums\TaskStatus;
 use App\Enums\UserRole;
+use App\Models\ApiKey;
 use App\Models\Task;
 use App\Models\TaskAssignment;
+use App\Notifications\TaskCompletionCodeNotification;
 use App\Models\User;
 use App\Repositories\Contracts\TaskRepositoryInterface;
 use App\Services\Contracts\TaskServiceInterface;
 use App\Support\TaskAccessScope;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 
@@ -23,6 +26,12 @@ use Illuminate\Validation\ValidationException;
  */
 class TaskService implements TaskServiceInterface
 {
+    /** Wrong e-mail codes allowed before the code of a completion is dropped. */
+    private const COMPLETION_ATTEMPTS = 5;
+
+    /** The longest standing task: two years (the weekdays and the hours repeat inside it). */
+    private const MAX_RECURRENCE_DAYS = 731;
+
     /** What a person is in the structure of the organization. */
     private const ADMIN = 'admin';
 
@@ -103,23 +112,152 @@ class TaskService implements TaskServiceInterface
 
     public function create(User $actor, array $data): array
     {
+        [$context, $attributes, $assignments] = $this->prepareCreation($actor, $data);
+
+        return $this->payload($actor, $context, $this->tasks->create($attributes, $assignments));
+    }
+
+    /**
+     * Everything that adding a task checks, without saving anything: the right to add, the schedule, the series, the
+     * dependency and the targets. Used by the adding itself and by the step that only asks for the e-mail code, so a task
+     * that could not be added never costs a code.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{0: array{kind: string, type: ?HeadquarterType, headquarter: ?int, branch: ?int}, 1: array<string, mixed>, 2: list<array<string, mixed>>}
+     */
+    private function prepareCreation(User $actor, array $data): array
+    {
         $context = $this->context($actor);
         abort_unless($this->canCreate($actor), 403, 'Nie możesz dodawać zadań.');
 
         $milestone = (bool) ($data['is_milestone'] ?? false);
         $attributes = $this->attributes($data) + ['organization_id' => $actor->organization_id, 'created_by' => $actor->id, 'is_milestone' => $milestone];
-        $attributes = [...$attributes, ...$this->schedule($data, $milestone)];
+
+        if (is_array($data['recurrence'] ?? null)) {
+            // a standing task: its span, weekdays and daily hours come from the recurrence; it has no status of its own
+            $attributes = [...$attributes, ...$this->recurrence($data['recurrence'], $milestone), 'status' => TaskStatus::Todo, 'progress' => 0];
+        } else {
+            $attributes = [...$attributes, ...$this->schedule($data, $milestone)];
+        }
+
         $attributes['depends_on_id'] = $this->dependency($actor, $context, $data['depends_on_id'] ?? null, null);
 
-        $task = $this->tasks->create($attributes, $this->assignments($actor, $data['assignments'] ?? []));
+        return [$context, $attributes, $this->assignments($actor, $data['assignments'] ?? [])];
+    }
 
-        return $this->payload($actor, $context, $task);
+    public function requestCompletionCode(User $actor, int $taskId): array
+    {
+        $context = $this->context($actor);
+        $task = $this->visibleTask($actor, $context, $taskId);
+        $this->assertCanCompleteWithCode($actor, $context, $task);
+
+        $code = (string) random_int(100000, 999999);
+        $key = self::completionKey($actor->id, $task->id);
+        $until = now()->addMinutes(TaskCompletionCodeNotification::VALID_MINUTES);
+
+        // the code is for this person, this task and this day (a standing task is done day by day)
+        Cache::put($key, [
+            'hash' => ApiKey::hashOf($code),
+            'day' => CarbonImmutable::now(config('app.timezone'))->toDateString(),
+            'attempts' => 0,
+            'expires_at' => $until->getTimestamp(),
+        ], $until);
+
+        try {
+            $actor->notify(new TaskCompletionCodeNotification($code, $task->title));
+        } catch (\Throwable $e) {
+            Cache::forget($key);
+
+            throw $e;
+        }
+
+        return ['pending' => true, 'title' => $task->title, 'valid_minutes' => TaskCompletionCodeNotification::VALID_MINUTES];
+    }
+
+    public function completeWithCode(User $actor, int $taskId, string $code): array
+    {
+        $context = $this->context($actor);
+        $task = $this->visibleTask($actor, $context, $taskId);
+        $this->assertCanCompleteWithCode($actor, $context, $task);
+
+        $key = self::completionKey($actor->id, $task->id);
+        $pending = Cache::get($key);
+
+        if (! is_array($pending) || ($pending['expires_at'] ?? 0) < now()->getTimestamp() || ($pending['day'] ?? null) !== CarbonImmutable::now(config('app.timezone'))->toDateString()) {
+            Cache::forget($key);
+
+            throw ValidationException::withMessages(['code' => 'Kod wygasł albo nie został wysłany. Poproś o nowy kod.']);
+        }
+
+        if (! hash_equals($pending['hash'], ApiKey::hashOf(trim($code)))) {
+            $pending['attempts']++;
+
+            if ($pending['attempts'] >= self::COMPLETION_ATTEMPTS) {
+                Cache::forget($key);
+
+                throw ValidationException::withMessages(['code' => 'Zbyt wiele błędnych kodów. Poproś o nowy kod.']);
+            }
+
+            Cache::put($key, $pending, now()->addSeconds(max(1, $pending['expires_at'] - now()->getTimestamp())));
+
+            throw ValidationException::withMessages(['code' => 'Nieprawidłowy kod.']);
+        }
+
+        Cache::forget($key);
+
+        // the code proves that the person who carries the task out has received it; the part is then recorded as usual
+        return $this->payload($actor, $context, $this->finish($actor, $task));
+    }
+
+    /**
+     * The task has to ask for the code, and the person has to be one who may mark it as done (an executor on a day of a
+     * standing task, or whoever may finish it): the code is never a way around who may complete what.
+     *
+     * @param  array{kind: string, type: ?HeadquarterType, headquarter: ?int, branch: ?int}  $context
+     */
+    private function assertCanCompleteWithCode(User $actor, array $context, Task $task): void
+    {
+        if (! $task->requires_completion_code) {
+            throw ValidationException::withMessages(['task' => 'To zadanie nie wymaga potwierdzenia kodem: oznacz je jako wykonane zwykłym przyciskiem.']);
+        }
+
+        abort_unless($this->canComplete($actor, $context, $task), 403, 'Nie możesz oznaczyć tego zadania jako wykonanego: dziś nie jest jego dniem, zrobiłeś je już, nie jesteś jego wykonawcą albo nie masz do tego prawa.');
+    }
+
+    private static function completionKey(int $userId, int $taskId): string
+    {
+        return 'task-completion:'.$userId.':'.$taskId;
+    }
+
+    public function visibilityScope(User $actor): ?TaskAccessScope
+    {
+        // 403 for an account that has no place in the structure (no panel, no organization)
+        return $this->scope($actor, $this->context($actor));
+    }
+
+    public function present(User $actor, iterable $tasks): array
+    {
+        $context = $this->context($actor);
+
+        return collect($tasks)->map(fn (Task $task) => $this->payload($actor, $context, $task))->values()->all();
     }
 
     public function update(User $actor, int $taskId, array $data): array
     {
         $context = $this->context($actor);
         $task = $this->visibleTask($actor, $context, $taskId);
+
+        // a task that asks for the e-mail code is finished only with it (requestCompletionCode / completeWithCode)
+        if ($task->requires_completion_code && ($data['status'] ?? null) === TaskStatus::Done->value && $task->status !== TaskStatus::Done) {
+            throw ValidationException::withMessages(['status' => 'To zadanie wymaga potwierdzenia wykonania kodem z e-maila: poproś o kod przyciskiem „Wykonane”.']);
+        }
+
+        // a standing task is done day by day: "done" records today's occurrence for the person, it never finishes the series
+        if ($task->isRecurring() && ($data['status'] ?? null) === TaskStatus::Done->value) {
+            abort_unless($this->canComplete($actor, $context, $task), 403, 'Nie możesz oznaczyć tego zadania jako wykonanego: dziś nie jest jego dniem, zrobiłeś je już dzisiaj albo nie jesteś jego wykonawcą.');
+
+            return $this->payload($actor, $context, $this->finish($actor, $task));
+        }
 
         // everyone else who sees the task may only mark it as done (a milestone: only a leader or an owner accepts it);
         // the rest is for its creator and the owner of the organization
@@ -132,8 +270,25 @@ class TaskService implements TaskServiceInterface
         }
 
         $attributes = $this->attributes($data, partial: true);
+        $scheduleKeys = array_intersect(['starts_at', 'ends_at', 'all_day', 'is_milestone'], array_keys($data));
 
-        if (array_intersect(['starts_at', 'ends_at', 'all_day', 'is_milestone'], array_keys($data)) !== []) {
+        if ($task->isRecurring()) {
+            // a series has no status or progress of its own (each day is done by each person separately)
+            unset($attributes['status'], $attributes['progress']);
+        }
+
+        if (is_array($data['recurrence'] ?? null)) {
+            // (re)defining the series: the span, the weekdays and the hours replace the schedule
+            $attributes = [...$attributes, ...$this->recurrence($data['recurrence'], (bool) ($data['is_milestone'] ?? false)), 'status' => TaskStatus::Todo, 'progress' => 0];
+            $scheduleKeys = [];
+        } elseif ($task->isRecurring() && array_key_exists('recurrence', $data)) {
+            // back to an ordinary task: the series is dropped and the schedule given (or the series' own span) stays
+            $attributes = [...$attributes, 'recurrence_from' => null, 'recurrence_to' => null, 'recurrence_days' => null, 'daily_start_time' => null, 'daily_end_time' => null];
+        } elseif ($task->isRecurring() && $scheduleKeys !== []) {
+            throw ValidationException::withMessages(['starts_at' => 'Termin zadania stałego zmienia się przez jego powtarzanie (okres, dni tygodnia, godziny).']);
+        }
+
+        if ($scheduleKeys !== []) {
             $merged = [
                 'starts_at' => $data['starts_at'] ?? $task->starts_at,
                 'ends_at' => array_key_exists('ends_at', $data) ? $data['ends_at'] : $task->ends_at,
@@ -156,6 +311,11 @@ class TaskService implements TaskServiceInterface
         $context = $this->context($actor);
         $task = $this->visibleTask($actor, $context, $taskId);
         abort_unless($this->canEdit($actor, $context, $task), 403, 'Nie możesz zmienić terminu tego zadania.');
+
+        // dragging would move one day only and break the series: its period, weekdays and hours are changed in the form
+        if ($task->isRecurring()) {
+            throw ValidationException::withMessages(['starts_at' => 'Termin zadania stałego zmienia się w jego formularzu (okres, dni tygodnia, godziny), nie przeciąganiem.']);
+        }
 
         $schedule = $this->schedule(
             ['starts_at' => $data['starts_at'], 'ends_at' => $data['ends_at'] ?? null, 'all_day' => $data['all_day'] ?? $task->all_day],
@@ -307,11 +467,14 @@ class TaskService implements TaskServiceInterface
     {
         $canEdit = $this->canEdit($actor, $context, $task);
         $executors = $this->executors($task);
-        $doneIds = $task->completions->pluck('user_id')->all();
+        $today = CarbonImmutable::now(config('app.timezone'));
+        // an ordinary task is done once; a standing one day by day, so the counts are those of today's occurrence
+        $doneIds = $task->completions->where('occurrence_key', $task->isRecurring() ? $today->toDateString() : 'once')->pluck('user_id')->all();
         $oversees = $this->overseenIds($actor, $context);
 
         return [
             'id' => $task->id,
+            'barcode' => $task->barcode,
             'title' => $task->title,
             'description' => $task->description,
             'priority' => $task->priority->value,
@@ -321,6 +484,19 @@ class TaskService implements TaskServiceInterface
             'progress' => $task->progress,
             'is_milestone' => $task->is_milestone,
             'all_day' => $task->all_day,
+            'requires_completion_code' => $task->requires_completion_code,
+            // a standing task: the period, the weekdays (ISO, 1 = Monday), the daily hours (null = the whole day)
+            'recurrence' => $task->isRecurring() ? [
+                'from' => $task->recurrence_from->toDateString(),
+                'to' => $task->recurrence_to->toDateString(),
+                'days' => array_map('intval', $task->recurrence_days ?? []),
+                'start_time' => $task->daily_start_time ? substr((string) $task->daily_start_time, 0, 5) : null,
+                'end_time' => $task->daily_end_time ? substr((string) $task->daily_end_time, 0, 5) : null,
+                'label' => $this->recurrenceLabel($task),
+            ] : null,
+            'occurs_today' => $task->occursOn($today),
+            // the days the person has marked as done (a standing task)
+            'done_dates' => $task->isRecurring() ? $task->completions->where('user_id', $actor->id)->pluck('occurrence_key')->sort()->values()->all() : [],
             'starts_at' => $task->starts_at->toIso8601String(),
             'ends_at' => $task->ends_at->toIso8601String(),
             'depends_on_id' => $task->depends_on_id,
@@ -382,6 +558,11 @@ class TaskService implements TaskServiceInterface
     {
         $executors = $this->executors($task);
 
+        // a standing task: today's occurrence of this person only; the series itself is never finished
+        if ($task->isRecurring()) {
+            return $this->tasks->complete($task, $actor->id, CarbonImmutable::now(config('app.timezone'))->toDateString());
+        }
+
         if ($task->is_milestone || ! collect($executors)->contains('id', $actor->id)) {
             return $this->tasks->update($task, ['status' => TaskStatus::Done]);
         }
@@ -435,6 +616,11 @@ class TaskService implements TaskServiceInterface
             $attributes['status'] = TaskStatus::from($data['status'] ?? TaskStatus::Todo->value);
         }
 
+        // the task asks the person who carries it out for a code from their e-mail before it counts as done (off by default)
+        if (! $partial || array_key_exists('requires_completion_code', $data)) {
+            $attributes['requires_completion_code'] = (bool) ($data['requires_completion_code'] ?? false);
+        }
+
         if (! $partial || isset($data['progress'])) {
             $attributes['progress'] = max(0, min(100, (int) ($data['progress'] ?? 0)));
         }
@@ -450,12 +636,114 @@ class TaskService implements TaskServiceInterface
      */
     private function canComplete(User $actor, array $context, Task $task): bool
     {
-        // nothing to do for the administrator, for a finished task and for a person whose part is already done
-        if ($context['kind'] === self::ADMIN || $task->status === TaskStatus::Done || $task->completions->contains('user_id', $actor->id)) {
+        if ($context['kind'] === self::ADMIN) {
+            return false;
+        }
+
+        // a standing task: on its days, for the people who carry it out, once a day each
+        if ($task->isRecurring()) {
+            $today = CarbonImmutable::now(config('app.timezone'));
+
+            return $task->occursOn($today)
+                && collect($this->executors($task))->contains('id', $actor->id)
+                && ! $task->completions->where('occurrence_key', $today->toDateString())->contains('user_id', $actor->id);
+        }
+
+        // nothing to do for a finished task and for a person whose part is already done
+        if ($task->status === TaskStatus::Done || $task->completions->contains('user_id', $actor->id)) {
             return false;
         }
 
         return ! $task->is_milestone || in_array($context['kind'], [self::OWNER, self::MANAGER, self::LEADER], true);
+    }
+
+    /**
+     * A standing task: the weekdays (ISO, 1 = Monday ... 7 = Sunday) it repeats on between two dates, with optional hours
+     * for each day (both or none; none = the whole day). The task's own start and end become the first and the last moment of
+     * the series, so everything that works with a start and an end (the period filter, the Gantt chart) keeps working.
+     *
+     * @param  array<string, mixed>  $input  from, to (Y-m-d), days, start_time, end_time (H:i)
+     * @return array<string, mixed>
+     */
+    private function recurrence(array $input, bool $milestone): array
+    {
+        if ($milestone) {
+            throw ValidationException::withMessages(['recurrence' => 'Kamień milowy jest jednym momentem, więc nie może się powtarzać.']);
+        }
+
+        $zone = config('app.timezone');
+        $from = CarbonImmutable::parse((string) ($input['from'] ?? ''), $zone)->startOfDay();
+        $to = CarbonImmutable::parse((string) ($input['to'] ?? ''), $zone)->startOfDay();
+        $days = collect($input['days'] ?? [])->map(fn ($day) => (int) $day)->filter(fn (int $day) => $day >= 1 && $day <= 7)->unique()->sort()->values()->all();
+
+        if ($to->lt($from)) {
+            throw ValidationException::withMessages(['recurrence.to' => 'Koniec okresu nie może być przed jego początkiem.']);
+        }
+
+        if ($from->diffInDays($to) > self::MAX_RECURRENCE_DAYS) {
+            throw ValidationException::withMessages(['recurrence.to' => 'Zadanie stałe może trwać najwyżej '.self::MAX_RECURRENCE_DAYS.' dni.']);
+        }
+
+        if ($days === []) {
+            throw ValidationException::withMessages(['recurrence.days' => 'Wybierz co najmniej jeden dzień tygodnia.']);
+        }
+
+        $start = ($input['start_time'] ?? null) ?: null;
+        $end = ($input['end_time'] ?? null) ?: null;
+
+        if (($start === null) !== ($end === null)) {
+            throw ValidationException::withMessages(['recurrence.start_time' => 'Podaj godzinę rozpoczęcia i zakończenia albo żadnej (zadanie na cały dzień).']);
+        }
+
+        if ($start !== null && $end <= $start) {
+            throw ValidationException::withMessages(['recurrence.end_time' => 'Godzina zakończenia musi być po godzinie rozpoczęcia.']);
+        }
+
+        // the first and the last day the series really falls on
+        $first = null;
+        $last = null;
+
+        for ($day = $from; $day->lte($to); $day = $day->addDay()) {
+            if (in_array($day->dayOfWeekIso, $days, true)) {
+                $first ??= $day;
+                $last = $day;
+            }
+        }
+
+        if ($first === null) {
+            throw ValidationException::withMessages(['recurrence.days' => 'Wybrane dni tygodnia nie wypadają w podanym okresie.']);
+        }
+
+        return [
+            'recurrence_from' => $from->toDateString(),
+            'recurrence_to' => $to->toDateString(),
+            'recurrence_days' => $days,
+            // stored as a time of day with seconds (the same form on every database)
+            'daily_start_time' => $start === null ? null : $start.':00',
+            'daily_end_time' => $end === null ? null : $end.':00',
+            'is_milestone' => false,
+            // no hours = a whole-day task; with hours the day has a window
+            'all_day' => $start === null,
+            'starts_at' => $start === null ? $first->startOfDay() : $first->setTimeFromTimeString($start),
+            'ends_at' => $end === null ? $last->endOfDay() : $last->setTimeFromTimeString($end),
+        ];
+    }
+
+    /** The series in words: "w dni robocze od 01.11.2026 do 30.11.2026, godz. 08:00–10:00". */
+    private function recurrenceLabel(Task $task): string
+    {
+        $days = array_map('intval', $task->recurrence_days ?? []);
+        $names = [1 => 'Pn', 2 => 'Wt', 3 => 'Śr', 4 => 'Cz', 5 => 'Pt', 6 => 'So', 7 => 'Nd'];
+
+        $which = match (true) {
+            $days === [1, 2, 3, 4, 5, 6, 7] => 'codziennie',
+            $days === [1, 2, 3, 4, 5] => 'w dni robocze',
+            default => implode(', ', array_map(fn (int $day) => $names[$day], $days)),
+        };
+
+        $hours = $task->daily_start_time ? 'godz. '.substr((string) $task->daily_start_time, 0, 5).'–'.substr((string) $task->daily_end_time, 0, 5) : 'cały dzień';
+
+        return $which.' od '.$task->recurrence_from->format('d.m.Y').' do '.$task->recurrence_to->format('d.m.Y').', '.$hours;
     }
 
     /**

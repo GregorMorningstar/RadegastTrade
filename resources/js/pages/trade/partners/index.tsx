@@ -1,5 +1,7 @@
 import { Head, router, useForm } from '@inertiajs/react';
+import { useState } from 'react';
 import { Card, Content, ContentHeader } from '@/components/adminlte/blocks';
+import { ColleagueInvitations, type ColleaguesProps } from '@/components/trade/colleague-invitations';
 import { Badge, btn, btnDanger, btnOutline, date, Empty, Errors, inputCls, td, th, TradeTabs } from '@/components/trade/ui';
 
 type Unit = { ref: string; name: string; kind: string; email?: string | null };
@@ -25,51 +27,107 @@ type Props = {
     can_invite: boolean;
     is_owner: boolean;
     units: (Unit & { warehouse: boolean })[];
+    colleagues: ColleaguesProps;
+    own: { shops: string[]; warehouses: string[] };
+    targets: { ref: string; name: string; organization_id: number; organization: string; warehouse: boolean; taken: string[] }[];
 };
 
 function act(url: string, method: 'post' | 'delete' = 'post', data: Record<string, unknown> = {}) {
     router[method](url, data as never, { preserveScroll: true });
 }
 
-function InviteForm({ units, isOwner }: { units: Props['units']; isOwner: boolean }) {
-    const form = useForm({ inviter_role: 'supplier', invitee_email: '', units: [] as string[], all_current: false, message: '' });
-    const usable = units.filter((unit) => form.data.inviter_role === 'buyer' || unit.warehouse);
+/** When the person has exactly one unit that fits the role, it is already chosen. */
+function only(units: Props['units'], role: 'supplier' | 'buyer'): string[] {
+    const fitting = units.filter((unit) => role === 'buyer' || unit.warehouse);
+
+    return fitting.length === 1 ? [fitting[0].ref] : [];
+}
+
+function InviteForm({ units, isOwner, targets }: { units: Props['units']; isOwner: boolean; targets: Props['targets'] }) {
+    const form = useForm({ inviter_role: units.some((unit) => unit.warehouse) ? 'supplier' : 'buyer', target_units: [] as string[], units: only(units, units.some((unit) => unit.warehouse) ? 'supplier' : 'buyer'), all_current: false, message: '' });
+    // every unit the person sees; a shop only buys, so it cannot be chosen when the organization presents offers
+    // who can be invited: when my organization orders, only warehouses sell; when it presents offers, any unit can buy
+    const invitable = targets.filter((target) => (form.data.inviter_role === 'supplier' || target.warehouse) && !target.taken.includes(form.data.inviter_role));
+    const [find, setFind] = useState('');
+    const needle = find.trim().toLowerCase();
+    const shown = invitable.filter((target) => `${target.organization} ${target.name}`.toLowerCase().includes(needle));
+    const organizations = [...new Map(shown.map((target) => [target.organization_id, target.organization])).entries()];
+    const chosen = (ids: string[]) => form.data.target_units.filter((ref) => !ids.includes(ref));
+    const hasWarehouse = units.some((unit) => unit.warehouse);
+    const selectable = (unit: Props['units'][number]) => form.data.inviter_role === 'buyer' || unit.warehouse;
 
     return (
         <form
             className="space-y-3"
             onSubmit={(e) => {
                 e.preventDefault();
-                form.post('/trade/partners/invitations', { preserveScroll: true, onSuccess: () => form.reset('invitee_email', 'message') });
+                form.post('/trade/partners/invitations', { preserveScroll: true, onSuccess: () => form.reset('target_units', 'message') });
             }}
         >
             <div className="flex flex-wrap gap-4 text-sm">
                 <label className="flex items-center gap-1">
-                    <input type="radio" checked={form.data.inviter_role === 'supplier'} onChange={() => form.setData({ ...form.data, inviter_role: 'supplier', units: [] })} />
-                    Moja organizacja przedstawia oferty (hurtownie)
+                    <input type="radio" disabled={!hasWarehouse} checked={form.data.inviter_role === 'supplier'} onChange={() => form.setData({ ...form.data, inviter_role: 'supplier', target_units: [] as string[], units: only(units, 'supplier') })} />
+                    Moja organizacja przedstawia oferty (hurtownie – zapraszam sklepy i hurtownie)
                 </label>
                 <label className="flex items-center gap-1">
-                    <input type="radio" checked={form.data.inviter_role === 'buyer'} onChange={() => form.setData({ ...form.data, inviter_role: 'buyer', units: [] })} />
-                    Moja organizacja zamawia
+                    <input type="radio" checked={form.data.inviter_role === 'buyer'} onChange={() => form.setData({ ...form.data, inviter_role: 'buyer', target_units: [] as string[], units: only(units, 'buyer') })} />
+                    Moja organizacja zamawia (zapraszam hurtownie)
                 </label>
             </div>
-            <label className="block text-sm">
-                Adres e-mail osoby z organizacji kontrahenta
-                <input className={inputCls} type="email" value={form.data.invitee_email} onChange={(e) => form.setData('invitee_email', e.target.value)} required />
-            </label>
+            <fieldset className="text-sm">
+                <legend className="font-semibold">Kogo zapraszasz (każda zaznaczona jednostka dostaje osobne zaproszenie)</legend>
+                <input className={`${inputCls} mb-1`} placeholder="Szukaj jednostki…" value={find} onChange={(e) => setFind(e.target.value)} />
+                <div className="mb-1 flex gap-3 text-xs text-[#007bff]">
+                    <button type="button" className="hover:underline" onClick={() => form.setData('target_units', [...new Set([...form.data.target_units, ...shown.map((target) => target.ref)])])}>
+                        zaznacz wszystkie{find ? ' widoczne' : ''}
+                    </button>
+                    <button type="button" className="hover:underline" onClick={() => form.setData('target_units', [])}>
+                        odznacz wszystkie
+                    </button>
+                    <span className="text-[#6c757d]">Wybrano: {form.data.target_units.length}</span>
+                </div>
+                <div className="grid max-h-60 gap-1 overflow-y-auto rounded border border-[#dee2e6] p-2">
+                    {invitable.length === 0 && <Empty>Brak jednostek, które można zaprosić.</Empty>}
+                    {organizations.map(([organizationId, organization]) => {
+                        const own = shown.filter((target) => target.organization_id === organizationId);
+                        const refs = own.map((target) => target.ref);
+                        const all = refs.every((ref) => form.data.target_units.includes(ref));
+
+                        return (
+                            <div key={organizationId} className="rounded border border-[#f1f3f5] p-1.5">
+                                <label className="flex items-center gap-2 font-semibold">
+                                    <input type="checkbox" checked={all} onChange={(e) => form.setData('target_units', e.target.checked ? [...new Set([...form.data.target_units, ...refs])] : chosen(refs))} />
+                                    {organization} <span className="text-xs font-normal text-[#6c757d]">(cała organizacja: {form.data.inviter_role === 'supplier' ? 'wszystkie jednostki' : 'wszystkie hurtownie'})</span>
+                                </label>
+                                <div className="ml-6 grid gap-0.5">
+                                    {own.map((target) => (
+                                        <label key={target.ref} className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={form.data.target_units.includes(target.ref)}
+                                                onChange={(e) => form.setData('target_units', e.target.checked ? [...form.data.target_units, target.ref] : form.data.target_units.filter((ref) => ref !== target.ref))}
+                                            />
+                                            {target.name} <span className="text-xs text-[#6c757d]">{target.warehouse ? 'hurtownia' : 'sklep'}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </fieldset>
             <fieldset className="text-sm">
                 <legend className="font-semibold">Moje jednostki objęte współpracą</legend>
-                {usable.length === 0 && <Empty>Nie masz jednostek, które mogą wystąpić w tej roli.</Empty>}
-                {usable.map((unit) => (
+                {units.filter(selectable).length === 0 && <Empty>Nie masz jednostek, które mogą wystąpić w tej roli.</Empty>}
+                {units.map((unit) => (
                     <label key={unit.ref} className="flex items-center gap-2">
                         <input
                             type="checkbox"
-                            disabled={form.data.all_current}
-                            checked={form.data.units.includes(unit.ref)}
+                            disabled={form.data.all_current || !selectable(unit)}
+                            checked={selectable(unit) && form.data.units.includes(unit.ref)}
                             onChange={(e) => form.setData('units', e.target.checked ? [...form.data.units, unit.ref] : form.data.units.filter((ref) => ref !== unit.ref))}
                         />
-                        {unit.name} <span className="text-xs text-[#6c757d]">({unit.kind})</span>
-                        <span className="text-xs text-[#6c757d]">{unit.email ? `– ${unit.email}` : '– brak adresu e-mail jednostki'}</span>
+                        <span className={selectable(unit) ? '' : 'text-[#adb5bd]'}>{unit.name}</span>
                     </label>
                 ))}
                 {isOwner && (
@@ -83,7 +141,7 @@ function InviteForm({ units, isOwner }: { units: Props['units']; isOwner: boolea
                 Wiadomość (opcjonalnie)
                 <textarea className={inputCls} rows={2} maxLength={500} value={form.data.message} onChange={(e) => form.setData('message', e.target.value)} />
             </label>
-            <button type="submit" className={btn} disabled={form.processing}>
+            <button type="submit" className={btn} disabled={form.processing || form.data.target_units.length === 0 || (form.data.units.length === 0 && !form.data.all_current)}>
                 Wyślij zaproszenie
             </button>
             <p className="text-xs text-[#6c757d]">
@@ -94,7 +152,7 @@ function InviteForm({ units, isOwner }: { units: Props['units']; isOwner: boolea
     );
 }
 
-export default function PartnersIndex({ relationships, sent, can_invite, is_owner, units }: Props) {
+export default function PartnersIndex({ relationships, sent, can_invite, is_owner, units, colleagues, targets, own }: Props) {
     return (
         <>
             <Head title="Współpraca handlowa" />
@@ -103,6 +161,22 @@ export default function PartnersIndex({ relationships, sent, can_invite, is_owne
                 <TradeTabs current="partners" />
                 <Errors />
                 <div className="space-y-4">
+                    <Card title="Moja organizacja – współpraca automatyczna" color="success">
+                        <p className="mb-2 text-sm">
+                            Jednostki Twojej organizacji współpracują bez zaproszeń i potwierdzeń: sklepy zamawiają w hurtowniach organizacji, a hurtownie przedstawiają oferty oraz zamawiają u innych hurtowni, także własnych.
+                        </p>
+                        <div className="grid gap-3 text-sm md:grid-cols-2">
+                            <div>
+                                <p className="font-semibold">Hurtownie (oferują i zamawiają)</p>
+                                {own.warehouses.length === 0 ? <Empty>Brak hurtowni.</Empty> : <ul>{own.warehouses.map((name) => <li key={name}>{name}</li>)}</ul>}
+                            </div>
+                            <div>
+                                <p className="font-semibold">Sklepy (zamawiają)</p>
+                                {own.shops.length === 0 ? <Empty>Brak sklepów.</Empty> : <ul>{own.shops.map((name) => <li key={name}>{name}</li>)}</ul>}
+                            </div>
+                        </div>
+                    </Card>
+
                     <Card title="Kontrahenci" color="primary">
                         {relationships.length === 0 ? (
                             <Empty>Nie masz jeszcze współpracy z inną organizacją.</Empty>
@@ -204,9 +278,15 @@ export default function PartnersIndex({ relationships, sent, can_invite, is_owne
                         <p className="mt-3 text-xs text-[#6c757d]">Zaproszenia otrzymane przychodzą e-mailem; link prowadzi na stronę, na której osoba reprezentująca organizację je przyjmuje albo odrzuca.</p>
                     </Card>
 
+                    {(colleagues.can_invite || colleagues.received.length > 0 || colleagues.consents.length > 0) && (
+                        <Card title="Zaproś osobę z mojej organizacji" color="warning">
+                            <ColleagueInvitations data={colleagues} />
+                        </Card>
+                    )}
+
                     {can_invite && (
                         <Card title="Zaproś do współpracy" color="success">
-                            <InviteForm units={units} isOwner={is_owner} />
+                            <InviteForm units={units} isOwner={is_owner} targets={targets} />
                         </Card>
                     )}
                 </div>

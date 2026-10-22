@@ -58,6 +58,32 @@ interface BranchServiceInterface
     public function pendingInvitationsForOwner(User $owner, HeadquarterType $type): Collection;
 
     /**
+     * The owner invites the leader of a shop or warehouse founded straight under the organization (no headquarters).
+     */
+    public function inviteStandaloneAsOwner(User $owner, HeadquarterType $type, string $email, ?string $phone = null): OrganizationInvitation;
+
+    /**
+     * Pending invitations of leaders of standalone branches of the given type.
+     *
+     * @return Collection<int, OrganizationInvitation>
+     */
+    public function pendingStandaloneInvitations(User $owner, HeadquarterType $type): Collection;
+
+    /**
+     * The branches of the organization that belong to no headquarters.
+     *
+     * @return Collection<int, ShopBranch|WarehouseBranch>
+     */
+    public function standaloneBranches(User $owner, HeadquarterType $type): Collection;
+
+    /**
+     * Attaches standalone branches to a headquarters (owner only); returns how many were attached.
+     *
+     * @param  array<int, int|string>  $branchIds
+     */
+    public function attachToHeadquarter(User $owner, HeadquarterType $type, int $headquarterId, array $branchIds): int;
+
+    /**
      * Cancels the branch invitation, provided it was sent from the logged-in manager's organization and headquarters.
      */
     public function cancel(User $manager, OrganizationInvitation $invitation): void;

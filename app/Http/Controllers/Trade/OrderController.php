@@ -6,6 +6,7 @@ use App\Enums\OrderStatus;
 use App\Http\Controllers\Controller;
 use App\Services\OrderService;
 use App\Support\OrderVisibility;
+use App\Support\TradeBadges;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -25,6 +26,9 @@ class OrderController extends Controller
     {
         $kind = $request->query('kind') === 'sales' ? 'sales' : 'purchases';
         $status = $request->query('status');
+
+        // what is there now is no longer new (the bubble in the menu)
+        app(TradeBadges::class)->markSeen($request->user(), 'orders');
 
         return Inertia::render('trade/orders/index', [
             'kind' => $kind,
